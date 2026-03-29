@@ -8,6 +8,7 @@ from app.routers import (
     domains_router,
     clusters_router,
     standards_router,
+    questions_router,
 )
 
 logging.basicConfig(
@@ -36,6 +37,7 @@ app.include_router(grades_router, prefix="/api/v1")
 app.include_router(domains_router, prefix="/api/v1")
 app.include_router(clusters_router, prefix="/api/v1")
 app.include_router(standards_router, prefix="/api/v1")
+app.include_router(questions_router, prefix="/api/v1")
 
 
 @app.get("/health")
