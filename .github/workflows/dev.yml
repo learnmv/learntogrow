@@ -20,6 +20,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Configure Docker daemon
+        run: |
+          sudo mkdir -p /etc/docker
+          echo '{"max-concurrent-uploads": 2, "max-concurrent-downloads": 3}' | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker || true
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
@@ -27,10 +33,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push backend image
+      - name: Build backend image
         run: |
-          docker build -t ${{ env.BACKEND_IMAGE }} ./backend
-          docker push ${{ env.BACKEND_IMAGE }}
+          docker build --compress -t ${{ env.BACKEND_IMAGE }} ./backend
+
+      - name: Push backend image with retry
+        run: |
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            docker push ${{ env.BACKEND_IMAGE }} && break
+            echo "Push failed, waiting 10s before retry..."
+            sleep 10
+          done
 
   build-frontend:
     runs-on: self-hosted
@@ -48,10 +62,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push frontend image
+      - name: Build frontend image
         run: |
-          docker build -t ${{ env.FRONTEND_IMAGE }} ./frontend
-          docker push ${{ env.FRONTEND_IMAGE }}
+          docker build --compress -t ${{ env.FRONTEND_IMAGE }} ./frontend
+
+      - name: Push frontend image with retry
+        run: |
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            docker push ${{ env.FRONTEND_IMAGE }} && break
+            echo "Push failed, waiting 10s before retry..."
+            sleep 10
+          done
 
   deploy:
     needs: [build-backend, build-frontend]
