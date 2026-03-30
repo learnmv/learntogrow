@@ -84,7 +84,6 @@ jobs:
             - backend-service.yaml
             - frontend-deployment.yaml
             - frontend-service.yaml
-            - ingress.yaml
           images:
             - name: ghcr.io/learnmv/learntogrow-backend
               newName: learntogrow-backend
