@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - secrets.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - frontend-service.yaml
+  - ingress.yaml
+
+images:
+  - name: ghcr.io/learnmv/learntogrow-backend
+    newTag: dev
+  - name: ghcr.io/learnmv/learntogrow-frontend
+    newTag: dev
+
+commonLabels:
+  app.kubernetes.io/name: learntogrow
+  app.kubernetes.io/part-of: learntogrow-platform
