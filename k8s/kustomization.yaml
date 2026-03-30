@@ -13,8 +13,10 @@ resources:
 
 images:
   - name: ghcr.io/learnmv/learntogrow-backend
+    newName: learntogrow-backend
     newTag: dev
   - name: ghcr.io/learnmv/learntogrow-frontend
+    newName: learntogrow-frontend
     newTag: dev
 
 commonLabels:

@@ -22,8 +22,8 @@ spec:
     spec:
       containers:
       - name: backend
-        image: ghcr.io/learnmv/learntogrow-backend:dev
-        imagePullPolicy: Always
+        image: learntogrow-backend:dev
+        imagePullPolicy: Never
         ports:
         - containerPort: 8000
           name: http
