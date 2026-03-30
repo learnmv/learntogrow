@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+@theme {
+  /* Font Families */
+  --font-display: "Outfit", sans-serif;
+  --font-body: "Source Serif 4", serif;
+
+  /* Sage Green - Primary (growth/nature) */
+  --color-sage-50: #f4f7f4;
+  --color-sage-100: #e3ebe3;
+  --color-sage-200: #c5d8c5;
+  --color-sage-300: #9ebf9e;
+  --color-sage-400: #759f75;
+  --color-sage-500: #5a8c5a;
+  --color-sage-600: #467046;
+  --color-sage-700: #3d5f3d;
+  --color-sage-800: #2f4a2f;
+  --color-sage-900: #1f301f;
+
+  /* Coral - Accent (energy/attention) */
+  --color-coral-50: #fdf3f0;
+  --color-coral-100: #f9e4de;
+  --color-coral-200: #f3c7bc;
+  --color-coral-300: #eaa593;
+  --color-coral-400: #e07a5f;
+  --color-coral-500: #d55f3f;
+  --color-coral-600: #c45a40;
+  --color-coral-700: #a34832;
+  --color-coral-800: #833e2e;
+  --color-coral-900: #6b3628;
+
+  /* Surface Colors */
+  --color-surface: #faf9f7;
+  --color-surface-elevated: #ffffff;
+  --color-surface-muted: #f5f4f2;
+
+  /* Text Colors */
+  --color-text: #2a2927;
+  --color-text-muted: #6b6a69;
+  --color-text-subtle: #9a9997;
+
+  /* Border Colors */
+  --color-border: #e8e6e3;
+  --color-border-subtle: #f0eeeb;
+
+  /* Animation Easings */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-expo: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Base Styles */
+:root {
+  font-family: var(--font-body);
+  color-scheme: light;
+}
+
+body {
+  background-color: var(--color-surface);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+/* Selection Style */
+::selection {
+  background-color: var(--color-sage-200);
+  color: var(--color-sage-900);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-sage-300);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-sage-400);
+}
+
+/* Utility Classes */
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Focus Styles */
+*:focus-visible {
+  outline: 2px solid var(--color-sage-500);
+  outline-offset: 2px;
+}
+
+/* Math Typography */
+.math {
+  font-family: "KaTeX Math", serif;
+  font-style: normal;
+}
