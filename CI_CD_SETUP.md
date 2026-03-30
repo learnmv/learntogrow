@@ -7,9 +7,11 @@
 - `frontend/Dockerfile` - Multi-stage Node.js + nginx
 - `frontend/nginx.conf` - Reverse proxy to backend
 
-### 2. GitHub Actions
-- `.github/workflows/dev.yml` - Builds and deploys on push to `dev` branch
-- `.github/workflows/prod.yml` - Builds and deploys on push to `main` branch
+### 2. GitHub Actions (Local Image Storage)
+- `.github/workflows/dev.yml` - Builds and saves images to `/home/sysadmin/dev-builds/`
+- `.github/workflows/prod.yml` - Builds and saves images to `/home/sysadmin/prod-builds/`
+
+Images are stored locally as tar files using `docker save` and loaded with `docker load` during deployment.
 
 ### 3. Kubernetes Manifests
 - `k8s/secrets.yaml` - Database credentials (gitignored)
@@ -24,21 +26,31 @@
 - `main` - Production branch
 - `dev` - Development branch
 
+## Image Storage Locations
+
+**Dev builds:** `/home/sysadmin/dev-builds/`
+- `learntogrow-backend-dev.tar`
+- `learntogrow-frontend-dev.tar`
+
+**Prod builds:** `/home/sysadmin/prod-builds/`
+- `learntogrow-backend-stable.tar`
+- `learntogrow-frontend-stable.tar`
+- `learntogrow-backend-v{VERSION}.tar` (versioned)
+- `learntogrow-frontend-v{VERSION}.tar` (versioned)
+
 ## Setup Instructions
 
 ### Step 1: Configure GitHub Secrets
 
 Go to **GitHub Repo → Settings → Secrets and variables → Actions**
 
-Add these secrets:
+Add this secret:
 
-1. **KUBE_CONFIG** - Base64 encoded kubectl config:
-   ```bash
-   cat ~/.kube/config | base64 -w0
-   ```
-   Copy the output and paste as KUBE_CONFIG secret.
-
-2. **GITHUB_TOKEN** - Auto-generated, no need to set manually
+**KUBE_CONFIG** - Base64 encoded kubectl config:
+```bash
+cat ~/.kube/config | base64 -w0
+```
+Copy the output and paste as KUBE_CONFIG secret.
 
 ### Step 2: Set Up Local Runner
 
@@ -117,9 +129,10 @@ echo "127.0.0.1 learntogrow.local" | sudo tee -a /etc/hosts
    ```
 
 2. **GitHub Actions will**:
-   - Build dev images with `dev` tag
-   - Push to GHCR
-   - Deploy to Kubernetes
+   - Build dev images locally
+   - Save to `/home/sysadmin/dev-builds/`
+   - Load images into Docker
+   - Deploy to Kubernetes using local images
 
 3. **Access dev deployment**:
    ```
@@ -134,15 +147,65 @@ echo "127.0.0.1 learntogrow.local" | sudo tee -a /etc/hosts
    - Review and merge
 
 2. **GitHub Actions will**:
-   - Build prod images with `latest`, `stable`, and version tags
-   - Push to GHCR
-   - Deploy to Kubernetes
+   - Build prod images locally
+   - Save to `/home/sysadmin/prod-builds/` (with stable and versioned tags)
+   - Load images into Docker
+   - Deploy to Kubernetes using local images
    - Create GitHub release
 
 3. **Access production**:
    ```
    http://learntogrow.local
    ```
+
+## Managing Local Images
+
+### View stored images
+
+```bash
+# Dev builds
+ls -lh /home/sysadmin/dev-builds/
+
+# Prod builds
+ls -lh /home/sysadmin/prod-builds/
+```
+
+### Load an image manually
+
+```bash
+# Load dev backend
+docker load < /home/sysadmin/dev-builds/learntogrow-backend-dev.tar
+
+# Load stable frontend
+docker load < /home/sysadmin/prod-builds/learntogrow-frontend-stable.tar
+
+# Check loaded images
+docker images | grep learntogrow
+```
+
+### Rollback to previous version
+
+```bash
+# List available versions
+ls -lt /home/sysadmin/prod-builds/
+
+# Load specific version
+docker load < /home/sysadmin/prod-builds/learntogrow-backend-v2024.01.15-a1b2c3d.tar
+
+# Update deployment to use specific image
+kubectl set image deployment/learntogrow-backend \
+  backend=learntogrow-backend:v2024.01.15-a1b2c3d -n default
+```
+
+### Clean up old images
+
+```bash
+# Keep only last 5 versions in prod
+ls -t /home/sysadmin/prod-builds/*.tar | tail -n +6 | xargs rm -f
+
+# Keep only last 3 dev builds
+ls -t /home/sysadmin/dev-builds/*.tar | tail -n +4 | xargs rm -f
+```
 
 ## Monitoring Commands
 
@@ -165,6 +228,10 @@ kubectl describe deployment learntogrow-backend -n default
 
 # Rollout status
 kubectl rollout status deployment/learntogrow-backend -n default
+
+# Check disk space used by images
+du -sh /home/sysadmin/dev-builds/
+du -sh /home/sysadmin/prod-builds/
 ```
 
 ## Troubleshooting
@@ -174,14 +241,20 @@ kubectl rollout status deployment/learntogrow-backend -n default
 - Restart runner: `sudo ./svc.sh stop && sudo ./svc.sh start`
 - Check logs: `cat ~/actions-runner/_diag/Worker_*.log`
 
-### Images not pushing to GHCR
-- Verify GITHUB_TOKEN has `write:packages` permission
-- Check if runner can access GitHub API
+### Image not found during deploy
+- Check if tar file exists: `ls -la /home/sysadmin/dev-builds/`
+- Load manually: `docker load < /path/to/image.tar`
+- Check loaded images: `docker images | grep learntogrow`
 
-### Pods not starting
-- Check events: `kubectl get events -n default --sort-by=.lastTimestamp`
-- Check image pull: `kubectl describe pod <pod-name> -n default`
-- Verify secrets exist: `kubectl get secrets -n default`
+### Pods not starting (ImagePullBackOff)
+- Verify image exists locally: `docker images`
+- Check imagePullPolicy is set to Never: `kubectl get deployment learntogrow-backend -o yaml | grep imagePullPolicy`
+- Load image manually: `docker load < /home/sysadmin/dev-builds/learntogrow-backend-dev.tar`
+
+### Out of disk space
+- Clean old builds: `rm /home/sysadmin/dev-builds/*.tar`
+- Clean old versions: Keep only last 5 prod versions
+- Prune Docker: `docker system prune -f`
 
 ### Ingress not working
 - Verify ingress controller: `kubectl get pods -n ingress-nginx`
@@ -191,6 +264,7 @@ kubectl rollout status deployment/learntogrow-backend -n default
 ## Security Notes
 
 - `k8s/secrets.yaml` is gitignored - never commit real credentials
-- Use GitHub Secrets for sensitive data
+- Images are stored locally on your server - ensure adequate disk space
 - Runner runs on your server - ensure it's secure
 - Database is external - ensure network connectivity
+- Local images are not pushed to any external registry
