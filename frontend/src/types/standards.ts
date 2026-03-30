@@ -29,9 +29,14 @@ export interface Cluster {
 export interface Standard {
   id: number
   cluster_id: number
+  grade_id: number
+  domain_id: number
   code: string
   description: string
-  difficulty: number
+  difficulty_base: number
+  keywords: string[]
+  conceptual_category: string
+  created_at: string
 }
 
 export interface HierarchyFilter {

@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react'
 import { fetchSubjects, fetchGrades } from '../../services/standards'
 import type { Subject, Grade } from '../../types/standards'
 
-export function SubjectSelector() {
+interface SubjectSelectorProps {
+  onGradeSelect?: (subjectId: string, gradeId: string) => void
+}
+
+export function SubjectSelector({ onGradeSelect }: SubjectSelectorProps) {
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [grades, setGrades] = useState<Grade[]>([])
   const [selectedSubject, setSelectedSubject] = useState<string>('')
@@ -51,6 +55,13 @@ export function SubjectSelector() {
 
     loadGrades()
   }, [selectedSubject])
+
+  // Notify parent when grade is selected
+  useEffect(() => {
+    if (selectedSubject && selectedGrade && onGradeSelect) {
+      onGradeSelect(selectedSubject, selectedGrade)
+    }
+  }, [selectedSubject, selectedGrade, onGradeSelect])
 
   if (loadingSubjects) {
     return (
@@ -131,18 +142,6 @@ export function SubjectSelector() {
               ))}
             </select>
           )}
-        </div>
-      )}
-
-      {/* Selection Summary */}
-      {selectedGrade && (
-        <div className="mt-4 p-4 bg-sage-50 rounded-xl">
-          <p className="font-display font-medium text-sage-700">
-            Subject: {subjects.find(s => s.id.toString() === selectedSubject)?.name}
-          </p>
-          <p className="text-sm text-sage-600 mt-1">
-            Grade: {grades.find(g => g.id.toString() === selectedGrade)?.display_name}
-          </p>
         </div>
       )}
     </div>

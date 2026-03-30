@@ -1,6 +1,5 @@
 import { get } from './api'
 import type { Subject, Grade, Domain, Cluster, Standard, HierarchyFilter } from '../types/standards'
-import type { PaginatedResponse } from '../types/api'
 
 /**
  * Fetch all subjects
@@ -38,13 +37,11 @@ export async function fetchClusters(filters?: HierarchyFilter): Promise<Cluster[
 }
 
 /**
- * Fetch standards with optional filters and pagination
+ * Fetch standards with optional filters
  */
 export async function fetchStandards(
-  filters?: HierarchyFilter & { min_difficulty?: number; max_difficulty?: number },
-  skip = 0,
-  limit = 100
-): Promise<PaginatedResponse<Standard>> {
+  filters?: HierarchyFilter & { min_difficulty?: number; max_difficulty?: number }
+): Promise<Standard[]> {
   const params = new URLSearchParams()
 
   if (filters?.subject_id) params.append('subject_id', filters.subject_id.toString())
@@ -54,18 +51,16 @@ export async function fetchStandards(
   if (filters?.min_difficulty !== undefined) params.append('min_difficulty', filters.min_difficulty.toString())
   if (filters?.max_difficulty !== undefined) params.append('max_difficulty', filters.max_difficulty.toString())
 
-  params.append('skip', skip.toString())
-  params.append('limit', limit.toString())
-
-  return get<PaginatedResponse<Standard>>(`/standards?${params.toString()}`)
+  const query = params.toString()
+  return get<Standard[]>(`/standards${query ? `?${query}` : ''}`)
 }
 
 /**
  * Fetch a single standard by ID
  */
 export async function fetchStandardById(id: number): Promise<Standard> {
-  const response = await fetchStandards({ subject_id: id })
-  const standard = response.items.find(s => s.id === id)
+  const standards = await fetchStandards()
+  const standard = standards.find(s => s.id === id)
   if (!standard) throw new Error(`Standard with ID ${id} not found`)
   return standard
 }
