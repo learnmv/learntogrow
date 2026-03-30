@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
 
 env:
-  BUILD_DIR: /home/sysadmin/prod-builds
-  BACKEND_IMAGE: learntogrow-backend:stable
-  FRONTEND_IMAGE: learntogrow-frontend:stable
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/learnmv/learntogrow-backend:stable
+  FRONTEND_IMAGE: ghcr.io/learnmv/learntogrow-frontend:stable
 
 jobs:
   version:
@@ -31,46 +31,50 @@ jobs:
   build-backend:
     needs: version
     runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create build directory
-        run: mkdir -p ${{ env.BUILD_DIR }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build backend image
+      - name: Build and push backend images
         run: |
           docker build -t ${{ env.BACKEND_IMAGE }} ./backend
-          docker tag ${{ env.BACKEND_IMAGE }} learntogrow-backend:v${{ needs.version.outputs.version }}
-
-      - name: Save backend images
-        run: |
-          docker save ${{ env.BACKEND_IMAGE }} > ${{ env.BUILD_DIR }}/learntogrow-backend-stable.tar
-          docker save learntogrow-backend:v${{ needs.version.outputs.version }} > ${{ env.BUILD_DIR }}/learntogrow-backend-v${{ needs.version.outputs.version }}.tar
-          echo "Backend images saved:"
-          ls -lh ${{ env.BUILD_DIR }}/learntogrow-backend*
+          docker tag ${{ env.BACKEND_IMAGE }} ghcr.io/learnmv/learntogrow-backend:v${{ needs.version.outputs.version }}
+          docker push ${{ env.BACKEND_IMAGE }}
+          docker push ghcr.io/learnmv/learntogrow-backend:v${{ needs.version.outputs.version }}
 
   build-frontend:
     needs: version
     runs-on: self-hosted
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create build directory
-        run: mkdir -p ${{ env.BUILD_DIR }}
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build frontend image
+      - name: Build and push frontend images
         run: |
           docker build -t ${{ env.FRONTEND_IMAGE }} ./frontend
-          docker tag ${{ env.FRONTEND_IMAGE }} learntogrow-frontend:v${{ needs.version.outputs.version }}
-
-      - name: Save frontend images
-        run: |
-          docker save ${{ env.FRONTEND_IMAGE }} > ${{ env.BUILD_DIR }}/learntogrow-frontend-stable.tar
-          docker save learntogrow-frontend:v${{ needs.version.outputs.version }} > ${{ env.BUILD_DIR }}/learntogrow-frontend-v${{ needs.version.outputs.version }}.tar
-          echo "Frontend images saved:"
-          ls -lh ${{ env.BUILD_DIR }}/learntogrow-frontend*
+          docker tag ${{ env.FRONTEND_IMAGE }} ghcr.io/learnmv/learntogrow-frontend:v${{ needs.version.outputs.version }}
+          docker push ${{ env.FRONTEND_IMAGE }}
+          docker push ghcr.io/learnmv/learntogrow-frontend:v${{ needs.version.outputs.version }}
 
   deploy:
     needs: [version, build-backend, build-frontend]
@@ -78,15 +82,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Load images from build directory
-        run: |
-          echo "Loading backend image..."
-          docker load < ${{ env.BUILD_DIR }}/learntogrow-backend-stable.tar
-          echo "Loading frontend image..."
-          docker load < ${{ env.BUILD_DIR }}/learntogrow-frontend-stable.tar
-          echo "Images loaded:"
-          docker images | grep learntogrow
 
       - name: Setup kubectl
         run: |
@@ -96,28 +91,6 @@ jobs:
       - name: Deploy to Kubernetes (Production)
         run: |
           cd k8s
-          # Update kustomization to use local images
-          cat > kustomization.yaml << EOF
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-          namespace: default
-          resources:
-            - secrets.yaml
-            - backend-deployment.yaml
-            - backend-service.yaml
-            - frontend-deployment.yaml
-            - frontend-service.yaml
-          images:
-            - name: ghcr.io/learnmv/learntogrow-backend
-              newName: learntogrow-backend
-              newTag: stable
-            - name: ghcr.io/learnmv/learntogrow-frontend
-              newName: learntogrow-frontend
-              newTag: stable
-          commonLabels:
-            app.kubernetes.io/name: learntogrow
-            app.kubernetes.io/part-of: learntogrow-platform
-          EOF
           kubectl apply -k . --validate=false
 
       - name: Wait for rollout
@@ -141,9 +114,9 @@ jobs:
           body: |
             Production deployment completed successfully.
 
-            **Images stored locally:**
-            - Backend: `${{ env.BUILD_DIR }}/learntogrow-backend-stable.tar`
-            - Frontend: `${{ env.BUILD_DIR }}/learntogrow-frontend-stable.tar`
-            - Versioned backups also saved
+            **Images pushed to GHCR:**
+            - Backend: `${{ env.BACKEND_IMAGE }}`
+            - Frontend: `${{ env.FRONTEND_IMAGE }}`
+            - Versioned images also tagged with `v${{ needs.version.outputs.version }}`
           draft: false
           prerelease: false
