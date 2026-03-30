@@ -9,7 +9,3 @@ resources:
   - backend-service.yaml
   - frontend-deployment.yaml
   - frontend-service.yaml
-
-commonLabels:
-  app.kubernetes.io/name: learntogrow
-  app.kubernetes.io/part-of: learntogrow-platform
