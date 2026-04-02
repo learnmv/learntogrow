@@ -20,10 +20,12 @@ spec:
       labels:
         app: learntogrow-frontend
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: frontend
-        image: learntogrow-frontend:dev
-        imagePullPolicy: Never
+        image: ghcr.io/learnmv/learntogrow-frontend:dev
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
           name: http

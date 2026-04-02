@@ -85,8 +85,6 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     setShowResult(true)
   }
 
-  const isCorrect = selectedAnswer === currentQuestion?.answer
-
   if (loading) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center">
