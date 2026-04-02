@@ -1,5 +1,5 @@
 // API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://10.0.0.131:8000/api/v1'
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'
 
 // App Configuration
 export const APP_NAME = 'LearnToGrow'

@@ -29,41 +29,41 @@ class QuestionService:
 
         prompt = f"""Generate a {question_type} math question for Grade {standard.grade.level if standard.grade else "appropriate"}.
 
-Standard: {standard.code} - {standard.description}
-Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
-Key Concepts: {keywords}
+                    Standard: {standard.code} - {standard.description}
+                    Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
+                    Key Concepts: {keywords}
 
-Requirements:
-- Create a clear, well-formed question
-- Test understanding of the standard's learning objectives
-- Provide the correct answer
-- Include a brief explanation suitable for a student
-"""
+                    Requirements:
+                    - Create a clear, well-formed question
+                    - Test understanding of the standard's learning objectives
+                    - Provide the correct answer
+                    - Include a brief explanation suitable for a student
+                    """
 
         if question_type == "multiple_choice":
             prompt += """
-- Provide exactly 4 multiple choice options (A, B, C, D)
-- Only one option should be correct
-- Distractors should be plausible but clearly wrong
+                        - Provide exactly 4 multiple choice options (A, B, C, D)
+                        - Only one option should be correct
+                        - Distractors should be plausible but clearly wrong
 
-Respond with valid JSON in this exact format:
-{
-    "question": "the question text",
-    "options": ["option A", "option B", "option C", "option D"],
-    "answer": "the correct option text",
-    "explanation": "explanation of why this is correct"
-}
-"""
+                        Respond with valid JSON in this exact format:
+                        {
+                            "question": "the question text",
+                            "options": ["option A", "option B", "option C", "option D"],
+                            "answer": "the correct option text",
+                            "explanation": "explanation of why this is correct"
+                        }
+                        """
         else:
             prompt += """
 
-Respond with valid JSON in this exact format:
-{
-    "question": "the question text",
-    "answer": "the correct answer",
-    "explanation": "explanation of why this is correct"
-}
-"""
+                        Respond with valid JSON in this exact format:
+                        {
+                            "question": "the question text",
+                            "answer": "the correct answer",
+                            "explanation": "explanation of why this is correct"
+                        }
+                        """
 
         return prompt
 
@@ -104,8 +104,7 @@ Respond with valid JSON in this exact format:
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.7,
-                "num_predict": 500
+                "temperature": 0.7
             }
         }
 
