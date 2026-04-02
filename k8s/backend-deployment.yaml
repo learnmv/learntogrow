@@ -31,9 +31,9 @@ spec:
           name: http
         env:
         - name: DB_HOST
-          value: "192.168.191.213"
+          value: "10.0.0.131"
         - name: DB_PORT
-          value: "5432"
+          value: "30432"
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
