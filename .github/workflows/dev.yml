@@ -7,8 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/learnmv/learntogrow-backend:dev
-  FRONTEND_IMAGE: ghcr.io/learnmv/learntogrow-frontend:dev
+  IMAGE_PREFIX: ghcr.io/learnmv/learntogrow
 
 jobs:
   build-backend:
@@ -16,9 +15,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_dev=${{ env.IMAGE_PREFIX }}-backend:dev" >> $GITHUB_OUTPUT
+          echo "Building with tag: ${IMAGE_TAG}"
 
       - name: Configure Docker daemon
         run: |
@@ -35,13 +47,14 @@ jobs:
 
       - name: Build backend image
         run: |
-          docker build --compress -t ${{ env.BACKEND_IMAGE }} ./backend
+          docker build --compress -t ${{ steps.vars.outputs.backend_image }} ./backend
+          docker tag ${{ steps.vars.outputs.backend_image }} ${{ steps.vars.outputs.backend_dev }}
 
       - name: Push backend image with retry
         run: |
           for i in 1 2 3; do
             echo "Attempt $i..."
-            docker push ${{ env.BACKEND_IMAGE }} && break
+            docker push ${{ steps.vars.outputs.backend_image }} && docker push ${{ steps.vars.outputs.backend_dev }} && break
             echo "Push failed, waiting 10s before retry..."
             sleep 10
           done
@@ -51,9 +64,22 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_dev=${{ env.IMAGE_PREFIX }}-frontend:dev" >> $GITHUB_OUTPUT
+          echo "Building with tag: ${IMAGE_TAG}"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -64,13 +90,14 @@ jobs:
 
       - name: Build frontend image
         run: |
-          docker build --compress -t ${{ env.FRONTEND_IMAGE }} ./frontend
+          docker build --compress -t ${{ steps.vars.outputs.frontend_image }} ./frontend
+          docker tag ${{ steps.vars.outputs.frontend_image }} ${{ steps.vars.outputs.frontend_dev }}
 
       - name: Push frontend image with retry
         run: |
           for i in 1 2 3; do
             echo "Attempt $i..."
-            docker push ${{ env.FRONTEND_IMAGE }} && break
+            docker push ${{ steps.vars.outputs.frontend_image }} && docker push ${{ steps.vars.outputs.frontend_dev }} && break
             echo "Push failed, waiting 10s before retry..."
             sleep 10
           done
@@ -82,10 +109,44 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
       - name: Setup kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
+
+      - name: Update image tags in kustomization
+        run: |
+          cd k8s
+          cat > kustomization.yaml << EOF
+          apiVersion: kustomize.config.k8s.io/v1beta1
+          kind: Kustomization
+
+          namespace: default
+
+          resources:
+            - secrets.yaml
+            - backend-deployment.yaml
+            - backend-service.yaml
+            - frontend-deployment.yaml
+            - frontend-service.yaml
+
+          images:
+            - name: ghcr.io/learnmv/learntogrow-backend
+              newTag: ${{ steps.vars.outputs.image_tag }}
+            - name: ghcr.io/learnmv/learntogrow-frontend
+              newTag: ${{ steps.vars.outputs.image_tag }}
+          EOF
+          cat kustomization.yaml
 
       - name: Deploy to Kubernetes
         run: |
@@ -99,5 +160,7 @@ jobs:
 
       - name: Verify deployment
         run: |
+          echo "Deployed images:"
+          kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.containers[0].image}{"\n"}{end}'
           kubectl get pods -n default
           kubectl get svc -n default
