@@ -50,7 +50,7 @@ spec:
               name: learntogrow-secrets
               key: db-password
         - name: OLLAMA_URL
-          value: "http://host.docker.internal:11434"
+          value: "http://127.0.0.1:11434"
         - name: OLLAMA_MODEL
           value: "kimi-k2.5:cloud"
         - name: OLLAMA_TIMEOUT
