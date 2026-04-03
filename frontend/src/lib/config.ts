@@ -55,13 +55,14 @@ async function fetchConfig(): Promise<RuntimeConfig> {
     if (!response.ok) {
       throw new Error(`Failed to load config: ${response.status}`)
     }
-    runtimeConfig = await response.json()
-    return runtimeConfig
+    const config = await response.json()
+    runtimeConfig = config
+    return config
   } catch (error) {
     console.error('Failed to load runtime config:', error)
     // Use fallback on error
     runtimeConfig = FALLBACK_CONFIG
-    return runtimeConfig
+    return FALLBACK_CONFIG
   }
 }
 
