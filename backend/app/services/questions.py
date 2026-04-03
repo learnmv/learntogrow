@@ -1,5 +1,6 @@
 import json
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any
 import httpx
 from sqlalchemy.orm import Session
@@ -8,6 +9,8 @@ from app.config import get_settings
 from app.models import Standard
 
 logger = logging.getLogger(__name__)
+
+PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
 class QuestionService:
@@ -18,6 +21,13 @@ class QuestionService:
         self.settings = get_settings()
         self.ollama_url = f"{self.settings.OLLAMA_URL}/api/generate"
 
+    def _load_prompt_template(self, question_type: str) -> str:
+        """Load prompt template from file."""
+        template_file = PROMPTS_DIR / f"{question_type}.txt"
+        if not template_file.exists():
+            template_file = PROMPTS_DIR / "open_ended.txt"
+        return template_file.read_text()
+
     def _build_prompt(
         self,
         standard: Standard,
@@ -27,47 +37,16 @@ class QuestionService:
         """Build a prompt for question generation."""
         keywords = ", ".join(standard.keywords) if standard.keywords else "related concepts"
 
-        prompt = f"""Generate a {question_type} math question for Grade {standard.grade.level if standard.grade else "appropriate"}.
+        template = self._load_prompt_template(question_type)
 
-                    Standard: {standard.code} - {standard.description}
-                    Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
-                    Key Concepts: {keywords}
-
-                    Requirements:
-                    - Create a clear, well-formed question
-                    - Test understanding of the standard's learning objectives
-                    - Provide the correct answer
-                    - Include a brief explanation suitable for a student
-                    """
-
-        if question_type == "multiple_choice":
-            prompt += """
-                        - Provide exactly 4 multiple choice options (A, B, C, D)
-                        - Only one option should be correct
-                        - Distractors should be plausible but clearly wrong
-
-                        IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
-
-                        {
-                            "question": "the question text",
-                            "options": ["option A", "option B", "option C", "option D"],
-                            "answer": "the correct option text",
-                            "explanation": "explanation of why this is correct"
-                        }
-                        """
-        else:
-            prompt += """
-
-                        IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
-
-                        {
-                            "question": "the question text",
-                            "answer": "the correct answer",
-                            "explanation": "explanation of why this is correct"
-                        }
-                        """
-
-        return prompt
+        return template.format(
+            question_type=question_type,
+            grade_level=standard.grade.level if standard.grade else "appropriate",
+            standard_code=standard.code,
+            standard_description=standard.description,
+            difficulty=difficulty,
+            keywords=keywords
+        )
 
     def generate_question(
         self,
