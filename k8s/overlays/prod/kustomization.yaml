@@ -7,6 +7,8 @@ namePrefix: prod-
 
 resources:
   - ../../base
+  - backend-service.yaml
+  - frontend-service.yaml
   - frontend-config.yaml
 
 # Note: Apply secrets manually with:
