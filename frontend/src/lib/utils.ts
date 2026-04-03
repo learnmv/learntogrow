@@ -1,3 +1,6 @@
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+
 /**
  * Combines class names using clsx and tailwind-merge
  */
@@ -6,7 +9,13 @@ export function cn(...inputs: (string | undefined | null | false)[]): string {
 }
 
 export function renderMathToHtml(text: string): string {
-  return text.replace(/\$([^$]+)\$/g, '<span class="math-inline">$1</span>')
+  return text.replace(/\$([^$]+)\$/g, (_, math) => {
+    try {
+      return katex.renderToString(math, { throwOnError: false })
+    } catch {
+      return math
+    }
+  })
 }
 
 /**
