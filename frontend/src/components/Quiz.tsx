@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { generateQuestion } from '../services/questions'
-import { cn } from '../lib/utils'
+import { cn, renderMathToHtml } from '../lib/utils'
 import type { Standard } from '../types/standards'
 import type { GeneratedQuestion, QuestionGenerationRequest } from '../types/questions'
 
@@ -213,9 +213,10 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
               </div>
 
               {/* Question Text */}
-              <h2 className="font-display text-2xl font-semibold text-text mb-8 leading-relaxed">
-                {currentQuestion.question}
-              </h2>
+              <h2
+                className="font-display text-2xl font-semibold text-text mb-8 leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question) }}
+              />
 
               {/* Options */}
               <div className="space-y-3">
@@ -253,7 +254,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                         >
                           {String.fromCharCode(65 + index)}
                         </span>
-                        <span className="font-body text-text text-lg">{option}</span>
+                        <span className="font-body text-text text-lg" dangerouslySetInnerHTML={{ __html: renderMathToHtml(option) }} />
                         {showCorrectness && isCorrectAnswer && (
                           <CheckCircle className="w-5 h-5 text-green-500 ml-auto" />
                         )}
@@ -276,7 +277,10 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                     className="mt-6 p-4 bg-sage-50 rounded-2xl border border-sage-200"
                   >
                     <p className="font-display font-medium text-sage-700 mb-2">Explanation</p>
-                    <p className="text-text-muted font-body">{currentQuestion.explanation}</p>
+                    <p
+                      className="text-text-muted font-body"
+                      dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.explanation) }}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

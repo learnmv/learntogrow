@@ -5,6 +5,10 @@ export function cn(...inputs: (string | undefined | null | false)[]): string {
   return inputs.filter(Boolean).join(' ')
 }
 
+export function renderMathToHtml(text: string): string {
+  return text.replace(/\$([^$]+)\$/g, '<span class="math-inline">$1</span>')
+}
+
 /**
  * Formats a number as a percentage
  */
