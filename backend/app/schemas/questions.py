@@ -1,6 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
 
+from app.prompts import AppletType
+
 
 class QuestionGenerateRequest(BaseModel):
     """Request body for generating a question."""
@@ -38,6 +40,22 @@ class QuestionResponse(BaseModel):
     standard_code: str = Field(..., description="Code of the standard used")
     difficulty: float = Field(..., description="Difficulty level of the question")
     question_type: str = Field(..., description="Type of question generated")
+    requires_diagram: Optional[bool] = Field(
+        None,
+        description="Whether this question includes a GeoGebra diagram"
+    )
+    applet_type: Optional[AppletType] = Field(
+        None,
+        description="GeoGebra applet type if requires_diagram is True"
+    )
+    geogebra_commands: Optional[List[str]] = Field(
+        None,
+        description="GeoGebra commands to create the diagram"
+    )
+    applet_config: Optional[dict] = Field(
+        None,
+        description="GeoGebra applet configuration"
+    )
 
     class Config:
         from_attributes = True

@@ -7,10 +7,9 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Standard
+from app.prompts import format_prompt, AppletType
 
 logger = logging.getLogger(__name__)
-
-PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 
 
 class QuestionService:
@@ -21,13 +20,6 @@ class QuestionService:
         self.settings = get_settings()
         self.ollama_url = f"{self.settings.OLLAMA_URL}/api/generate"
 
-    def _load_prompt_template(self, question_type: str) -> str:
-        """Load prompt template from file."""
-        template_file = PROMPTS_DIR / f"{question_type}.txt"
-        if not template_file.exists():
-            template_file = PROMPTS_DIR / "open_ended.txt"
-        return template_file.read_text()
-
     def _build_prompt(
         self,
         standard: Standard,
@@ -36,16 +28,26 @@ class QuestionService:
     ) -> str:
         """Build a prompt for question generation."""
         keywords = ", ".join(standard.keywords) if standard.keywords else "related concepts"
+        grade_level = standard.grade.level if standard.grade else "appropriate"
 
-        template = self._load_prompt_template(question_type)
+        # Convert applet_type string to enum if present
+        applet_type = None
+        if standard.applet_type:
+            try:
+                applet_type = AppletType(standard.applet_type)
+            except ValueError:
+                applet_type = None
 
-        return template.format(
+        # Use the new format_prompt function that handles GeoGebra diagrams
+        return format_prompt(
             question_type=question_type,
-            grade_level=standard.grade.level if standard.grade else "appropriate",
+            grade_level=str(grade_level),
             standard_code=standard.code,
             standard_description=standard.description,
             difficulty=difficulty,
-            keywords=keywords
+            keywords=keywords,
+            requires_diagram=standard.requires_diagram,
+            applet_type=applet_type,
         )
 
     def generate_question(
@@ -117,6 +119,21 @@ class QuestionService:
             question_data["standard_code"] = standard.code
             question_data["difficulty"] = actual_difficulty
             question_data["question_type"] = question_type
+            question_data["requires_diagram"] = standard.requires_diagram
+            question_data["applet_type"] = standard.applet_type
+
+            # Ensure geogebra_commands and applet_config exist if requires_diagram is True
+            if standard.requires_diagram:
+                if "geogebra_commands" not in question_data:
+                    question_data["geogebra_commands"] = []
+                if "applet_config" not in question_data:
+                    question_data["applet_config"] = {
+                        "width": 800,
+                        "height": 600,
+                        "showToolBar": False,
+                        "showAlgebraInput": False,
+                        "showMenuBar": False
+                    }
 
             return question_data
 

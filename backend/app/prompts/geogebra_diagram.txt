@@ -1,0 +1,47 @@
+Generate a {question_type} math question for Grade {grade_level} that INCLUDES an interactive GeoGebra diagram.
+
+Standard: {standard_code} - {standard_description}
+Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
+Key Concepts: {keywords}
+Applet Type: {applet_type}
+
+Requirements:
+- Create a clear, well-formed question that requires visual understanding
+- The question should reference the GeoGebra diagram
+- Provide the correct answer
+- Include a brief explanation suitable for a student
+{question_specific_requirements}
+
+GEOGERA COMMANDS:
+Generate GeoGebra commands to create an appropriate diagram for this question.
+
+Available commands for {applet_type} applet:
+{applet_commands}
+
+Command Guidelines:
+- Use only the commands listed above
+- Create objects in logical order (points first, then shapes)
+- Use descriptive names (e.g., "vertexA", "triangleABC")
+- Set appropriate colors for clarity (red=255,0,0, blue=0,128,255, green=0,200,0)
+- Use SetFixed() for objects students should not move
+- Use SetVisible() to hide construction elements if needed
+
+IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
+
+{{
+    "question": "the question text referencing the diagram",
+    {answer_field}
+    "explanation": "explanation of why this is correct",
+    "geogebra_commands": [
+        "command1",
+        "command2",
+        "command3"
+    ],
+    "applet_config": {{
+        "width": 800,
+        "height": 600,
+        "showToolBar": false,
+        "showAlgebraInput": false,
+        "showMenuBar": false
+    }}
+}}
