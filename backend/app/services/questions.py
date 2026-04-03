@@ -46,7 +46,8 @@ class QuestionService:
                         - Only one option should be correct
                         - Distractors should be plausible but clearly wrong
 
-                        Respond with valid JSON in this exact format:
+                        IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
+
                         {
                             "question": "the question text",
                             "options": ["option A", "option B", "option C", "option D"],
@@ -57,7 +58,8 @@ class QuestionService:
         else:
             prompt += """
 
-                        Respond with valid JSON in this exact format:
+                        IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
+
                         {
                             "question": "the question text",
                             "answer": "the correct answer",
