@@ -3,14 +3,11 @@ kind: Service
 metadata:
   name: learntogrow-frontend
   namespace: default
-  labels:
-    app: learntogrow-frontend
 spec:
   selector:
     app: learntogrow-frontend
   ports:
-  - port: 80
-    targetPort: 80
-    protocol: TCP
-    name: http
+    - port: 80
+      targetPort: 80
+      name: http
   type: ClusterIP

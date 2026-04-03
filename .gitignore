@@ -23,9 +23,10 @@ build/
 *.swp
 *.swo
 
-# Kubernetes
-k8s/secrets.yaml
-
 # OS
 .DS_Store
 Thumbs.db
+
+# Kubernetes Secrets (create manually on server)
+k8s/overlays/*/secrets.yaml
+k8s/secrets.yaml

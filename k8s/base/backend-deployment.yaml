@@ -6,7 +6,7 @@ metadata:
   labels:
     app: learntogrow-backend
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -20,18 +20,26 @@ spec:
       labels:
         app: learntogrow-backend
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: backend
-        image: learntogrow-backend:dev
-        imagePullPolicy: Never
+        image: ghcr.io/learnmv/learntogrow-backend
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
           name: http
         env:
         - name: DB_HOST
-          value: "192.168.191.213"
+          valueFrom:
+            configMapKeyRef:
+              name: db-config
+              key: host
         - name: DB_PORT
-          value: "5432"
+          valueFrom:
+            configMapKeyRef:
+              name: db-config
+              key: port
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
@@ -48,11 +56,20 @@ spec:
               name: learntogrow-secrets
               key: db-password
         - name: OLLAMA_URL
-          value: "http://host.docker.internal:11434"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-url
         - name: OLLAMA_MODEL
-          value: "gemma3:1b"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-model
         - name: OLLAMA_TIMEOUT
-          value: "60"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-timeout
         resources:
           requests:
             memory: "256Mi"

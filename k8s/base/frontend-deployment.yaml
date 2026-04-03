@@ -6,7 +6,7 @@ metadata:
   labels:
     app: learntogrow-frontend
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -20,10 +20,12 @@ spec:
       labels:
         app: learntogrow-frontend
     spec:
+      imagePullSecrets:
+      - name: ghcr-secret
       containers:
       - name: frontend
-        image: learntogrow-frontend:dev
-        imagePullPolicy: Never
+        image: ghcr.io/learnmv/learntogrow-frontend
+        imagePullPolicy: Always
         ports:
         - containerPort: 80
           name: http
@@ -34,6 +36,10 @@ spec:
           limits:
             memory: "128Mi"
             cpu: "200m"
+        volumeMounts:
+        - name: config-volume
+          mountPath: /usr/share/nginx/html/config.json
+          subPath: config.json
         livenessProbe:
           httpGet:
             path: /
@@ -50,3 +56,7 @@ spec:
           periodSeconds: 5
           timeoutSeconds: 3
           failureThreshold: 3
+      volumes:
+      - name: config-volume
+        configMap:
+          name: frontend-config

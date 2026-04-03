@@ -16,10 +16,9 @@ Images are stored locally as tar files using `docker save` and loaded with `dock
 ### 3. Kubernetes Manifests
 - `k8s/secrets.yaml` - Database credentials (gitignored)
 - `k8s/backend-deployment.yaml` - FastAPI deployment (2 replicas)
-- `k8s/backend-service.yaml` - ClusterIP service
+- `k8s/backend-service.yaml` - NodePort service (port 30800)
 - `k8s/frontend-deployment.yaml` - Nginx deployment (2 replicas)
-- `k8s/frontend-service.yaml` - ClusterIP service
-- `k8s/ingress.yaml` - Ingress rules (learntogrow.local)
+- `k8s/frontend-service.yaml` - NodePort service (port 30080)
 - `k8s/kustomization.yaml` - Kustomize base configuration
 
 ### 4. Branches
@@ -94,26 +93,14 @@ nano k8s/secrets.yaml
 kubectl apply -f k8s/secrets.yaml
 ```
 
-### Step 4: Configure Ingress (if not already set up)
-
-If you don't have nginx-ingress controller:
+### Step 4: Get Node IP for Access
 
 ```bash
-# Install nginx ingress controller
-kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+# Get your node's IP address
+kubectl get nodes -o wide
 
-# Wait for controller to be ready
-kubectl wait --namespace ingress-nginx \
-  --for=condition=ready pod \
-  --selector=app.kubernetes.io/component=controller \
-  --timeout=120s
-```
-
-### Step 5: Add Host Entry (for local access)
-
-```bash
-# Add to /etc/hosts
-echo "127.0.0.1 learntogrow.local" | sudo tee -a /etc/hosts
+# Example output shows EXTERNAL-IP or INTERNAL-IP column
+# Use that IP with the NodePort to access services
 ```
 
 ## Workflow
@@ -136,7 +123,8 @@ echo "127.0.0.1 learntogrow.local" | sudo tee -a /etc/hosts
 
 3. **Access dev deployment**:
    ```
-   http://learntogrow.local
+   Frontend: http://<node-ip>:30080
+   Backend:  http://<node-ip>:30800
    ```
 
 ### Production Flow
@@ -155,7 +143,8 @@ echo "127.0.0.1 learntogrow.local" | sudo tee -a /etc/hosts
 
 3. **Access production**:
    ```
-   http://learntogrow.local
+   Frontend: http://<node-ip>:30080
+   Backend:  http://<node-ip>:30800
    ```
 
 ## Managing Local Images
@@ -216,9 +205,6 @@ kubectl get pods -n default
 # Check services
 kubectl get svc -n default
 
-# Check ingress
-kubectl get ingress -n default
-
 # View logs
 kubectl logs -f deployment/learntogrow-backend -n default
 kubectl logs -f deployment/learntogrow-frontend -n default
@@ -256,10 +242,11 @@ du -sh /home/sysadmin/prod-builds/
 - Clean old versions: Keep only last 5 prod versions
 - Prune Docker: `docker system prune -f`
 
-### Ingress not working
-- Verify ingress controller: `kubectl get pods -n ingress-nginx`
-- Check ingress: `kubectl describe ingress learntogrow-ingress -n default`
-- Test locally: `curl -H "Host: learntogrow.local" http://localhost/`
+### Cannot access services
+- Check services are NodePort: `kubectl get svc`
+- Verify node IP: `kubectl get nodes -o wide`
+- Test locally: `curl http://<node-ip>:30080` and `curl http://<node-ip>:30800`
+- Check firewall allows ports 30080 and 30800
 
 ## Security Notes
 

@@ -1,11 +1,13 @@
 import json
 import logging
+from pathlib import Path
 from typing import Optional, Dict, Any
 import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import Standard
+from app.prompts import format_prompt, AppletType
 
 logger = logging.getLogger(__name__)
 
@@ -26,46 +28,27 @@ class QuestionService:
     ) -> str:
         """Build a prompt for question generation."""
         keywords = ", ".join(standard.keywords) if standard.keywords else "related concepts"
+        grade_level = standard.grade.level if standard.grade else "appropriate"
 
-        prompt = f"""Generate a {question_type} math question for Grade {standard.grade.level if standard.grade else "appropriate"}.
+        # Convert applet_type string to enum if present
+        applet_type = None
+        if standard.applet_type:
+            try:
+                applet_type = AppletType(standard.applet_type)
+            except ValueError:
+                applet_type = None
 
-Standard: {standard.code} - {standard.description}
-Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
-Key Concepts: {keywords}
-
-Requirements:
-- Create a clear, well-formed question
-- Test understanding of the standard's learning objectives
-- Provide the correct answer
-- Include a brief explanation suitable for a student
-"""
-
-        if question_type == "multiple_choice":
-            prompt += """
-- Provide exactly 4 multiple choice options (A, B, C, D)
-- Only one option should be correct
-- Distractors should be plausible but clearly wrong
-
-Respond with valid JSON in this exact format:
-{
-    "question": "the question text",
-    "options": ["option A", "option B", "option C", "option D"],
-    "answer": "the correct option text",
-    "explanation": "explanation of why this is correct"
-}
-"""
-        else:
-            prompt += """
-
-Respond with valid JSON in this exact format:
-{
-    "question": "the question text",
-    "answer": "the correct answer",
-    "explanation": "explanation of why this is correct"
-}
-"""
-
-        return prompt
+        # Use the new format_prompt function that handles GeoGebra diagrams
+        return format_prompt(
+            question_type=question_type,
+            grade_level=str(grade_level),
+            standard_code=standard.code,
+            standard_description=standard.description,
+            difficulty=difficulty,
+            keywords=keywords,
+            requires_diagram=standard.requires_diagram,
+            applet_type=applet_type,
+        )
 
     def generate_question(
         self,
@@ -104,8 +87,7 @@ Respond with valid JSON in this exact format:
             "stream": False,
             "format": "json",
             "options": {
-                "temperature": 0.7,
-                "num_predict": 500
+                "temperature": 0.7
             }
         }
 
@@ -137,6 +119,21 @@ Respond with valid JSON in this exact format:
             question_data["standard_code"] = standard.code
             question_data["difficulty"] = actual_difficulty
             question_data["question_type"] = question_type
+            question_data["requires_diagram"] = standard.requires_diagram
+            question_data["applet_type"] = standard.applet_type
+
+            # Ensure geogebra_commands and applet_config exist if requires_diagram is True
+            if standard.requires_diagram:
+                if "geogebra_commands" not in question_data:
+                    question_data["geogebra_commands"] = []
+                if "applet_config" not in question_data:
+                    question_data["applet_config"] = {
+                        "width": 800,
+                        "height": 600,
+                        "showToolBar": False,
+                        "showAlgebraInput": False,
+                        "showMenuBar": False
+                    }
 
             return question_data
 

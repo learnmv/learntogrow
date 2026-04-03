@@ -1,8 +1,21 @@
+import katex from 'katex'
+import 'katex/dist/katex.min.css'
+
 /**
  * Combines class names using clsx and tailwind-merge
  */
 export function cn(...inputs: (string | undefined | null | false)[]): string {
   return inputs.filter(Boolean).join(' ')
+}
+
+export function renderMathToHtml(text: string): string {
+  return text.replace(/\$([^$]+)\$/g, (_, math) => {
+    try {
+      return katex.renderToString(math, { throwOnError: false })
+    } catch {
+      return math
+    }
+  })
 }
 
 /**
