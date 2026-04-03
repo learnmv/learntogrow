@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { generateQuestion } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
 import type { Standard } from '../types/standards'
 import type { GeneratedQuestion, QuestionGenerationRequest } from '../types/questions'
+import { GeoGebraApplet } from './GeoGebraApplet'
 
 interface QuizProps {
   subjectId: string
@@ -33,7 +34,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
         })
         setStandards(standardsList)
         setLoading(false)
-      } catch (err) {
+      } catch {
         setError('Failed to load standards')
         setLoading(false)
       }
@@ -214,9 +215,30 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
               {/* Question Text */}
               <h2
-                className="font-display text-2xl font-semibold text-text mb-8 leading-relaxed"
+                className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question) }}
               />
+
+              {/* GeoGebra Diagram */}
+              {currentQuestion.requires_diagram && currentQuestion.applet_type && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="mb-6"
+                >
+                  <div className="flex items-center gap-2 mb-3">
+                    <Image className="w-4 h-4 text-sage-600" />
+                    <span className="text-sm font-medium text-sage-700">Interactive Diagram</span>
+                  </div>
+                  <GeoGebraApplet
+                    appletType={currentQuestion.applet_type}
+                    commands={currentQuestion.geogebra_commands}
+                    config={currentQuestion.applet_config}
+                    className="w-full"
+                  />
+                </motion.div>
+              )}
 
               {/* Options */}
               <div className="space-y-3">
