@@ -24,16 +24,22 @@ spec:
       - name: ghcr-secret
       containers:
       - name: backend
-        image: ghcr.io/learnmv/learntogrow-backend:dev
+        image: ghcr.io/learnmv/learntogrow-backend
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8000
           name: http
         env:
         - name: DB_HOST
-          value: "10.0.0.131"
+          valueFrom:
+            configMapKeyRef:
+              name: db-config
+              key: host
         - name: DB_PORT
-          value: "30432"
+          valueFrom:
+            configMapKeyRef:
+              name: db-config
+              key: port
         - name: DB_NAME
           valueFrom:
             secretKeyRef:
@@ -50,11 +56,20 @@ spec:
               name: learntogrow-secrets
               key: db-password
         - name: OLLAMA_URL
-          value: "http://10.0.0.131:11434"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-url
         - name: OLLAMA_MODEL
-          value: "kimi-k2.5:cloud"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-model
         - name: OLLAMA_TIMEOUT
-          value: "60"
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-timeout
         resources:
           requests:
             memory: "256Mi"

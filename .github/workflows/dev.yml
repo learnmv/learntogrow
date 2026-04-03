@@ -126,32 +126,13 @@ jobs:
 
       - name: Update image tags in kustomization
         run: |
-          cd k8s
-          cat > kustomization.yaml << EOF
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-
-          namespace: default
-
-          resources:
-            - secrets.yaml
-            - backend-deployment.yaml
-            - backend-service.yaml
-            - frontend-deployment.yaml
-            - frontend-service.yaml
-
-          images:
-            - name: ghcr.io/learnmv/learntogrow-backend
-              newTag: ${{ steps.vars.outputs.image_tag }}
-            - name: ghcr.io/learnmv/learntogrow-frontend
-              newTag: ${{ steps.vars.outputs.image_tag }}
-          EOF
+          cd k8s/overlays/dev
+          sed -i "s/newTag: dev/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
           cat kustomization.yaml
 
       - name: Deploy to Kubernetes
         run: |
-          cd k8s
-          kubectl apply -k . --validate=false
+          kubectl apply -k k8s/overlays/dev/ --validate=false
 
       - name: Wait for rollout
         run: |

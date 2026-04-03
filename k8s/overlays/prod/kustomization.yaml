@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+namePrefix: prod-
+
+resources:
+  - ../../base
+  - frontend-config.yaml
+
+# Note: Apply secrets manually with:
+# kubectl apply -f secrets.yaml
+
+configMapGenerator:
+  - name: db-config
+    literals:
+      - host=10.0.0.131
+      - port=30432
+
+images:
+  - name: ghcr.io/learnmv/learntogrow-backend
+    newTag: prod
+  - name: ghcr.io/learnmv/learntogrow-frontend
+    newTag: prod

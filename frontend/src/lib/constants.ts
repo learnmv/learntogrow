@@ -1,13 +1,9 @@
-// API Configuration
-export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://10.0.0.131:30800/api/v1'
+// Re-export config functions for backward compatibility
+export { getApiUrl, getAppName, getConfig, isDebugEnabled } from './config'
+export type { RuntimeConfig } from './config'
 
 // App Configuration
-export const APP_NAME = 'LearnToGrow'
 export const APP_DESCRIPTION = 'AI-powered educational question generation'
-
-// Default values
-export const DEFAULT_QUESTION_TYPE = 'multiple_choice'
-export const DEFAULT_DIFFICULTY = 0.5
 
 // Question types
 export const QUESTION_TYPES = [

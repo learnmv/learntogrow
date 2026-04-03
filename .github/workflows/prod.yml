@@ -114,8 +114,7 @@ jobs:
 
       - name: Deploy to Kubernetes (Production)
         run: |
-          cd k8s
-          kubectl apply -k . --validate=false
+          kubectl apply -k k8s/overlays/prod/ --validate=false
 
       - name: Wait for rollout
         run: |

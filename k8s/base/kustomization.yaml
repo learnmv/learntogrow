@@ -4,7 +4,6 @@ kind: Kustomization
 namespace: default
 
 resources:
-  - secrets.yaml
   - backend-deployment.yaml
   - backend-service.yaml
   - frontend-deployment.yaml
