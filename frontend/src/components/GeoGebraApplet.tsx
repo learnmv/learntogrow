@@ -1,6 +1,16 @@
-import { useEffect, useRef, useState } from 'react'
-import type { AppletType } from '../lib/geogebra-commands'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { APPLET_TYPE_NAMES, type AppletType } from '../lib/geogebra-commands'
+import { delay } from '../lib/utils'
+import { useTrackedTimeouts } from '../hooks/useTrackedTimeouts'
 import type { AppletConfig } from '../types/questions'
+
+// Constants for timeouts and delays
+const POLL_INTERVAL_MS = 500
+const INITIAL_POLL_DELAY_MS = 1000
+const INJECTION_TIMEOUT_MS = 45000
+const MAX_RETRIES = 20
+const PERSPECTIVE_DELAY_MS = 1000
+const COMMAND_EXECUTION_DELAY_MS = 500
 
 interface GeoGebraAppletProps {
   /** GeoGebra applet type */
@@ -11,6 +21,8 @@ interface GeoGebraAppletProps {
   config?: AppletConfig
   /** CSS class name for the container */
   className?: string
+  /** Callback when applet fails to load */
+  onError?: (error: Error) => void
 }
 
 /** Script loading promise for deduplication */
@@ -33,7 +45,17 @@ function loadGeoGebraScript(): Promise<void> {
     // Check if script element exists
     const existingScript = document.getElementById('geogebra-deployggb')
     if (existingScript) {
+      // Check if script already loaded successfully
+      if ((existingScript as HTMLScriptElement).dataset.loaded === 'true') {
+        resolve()
+        return
+      }
+      // Wait for load event
       existingScript.addEventListener('load', () => resolve())
+      existingScript.addEventListener('error', () => {
+        scriptLoadPromise = null
+        reject(new Error('Failed to load GeoGebra script'))
+      })
       return
     }
 
@@ -41,7 +63,10 @@ function loadGeoGebraScript(): Promise<void> {
     script.id = 'geogebra-deployggb'
     script.src = 'https://www.geogebra.org/apps/deployggb.js'
     script.async = true
-    script.onload = () => resolve()
+    script.onload = () => {
+      script.dataset.loaded = 'true'
+      resolve()
+    }
     script.onerror = () => {
       scriptLoadPromise = null
       reject(new Error('Failed to load GeoGebra script'))
@@ -52,22 +77,36 @@ function loadGeoGebraScript(): Promise<void> {
   return scriptLoadPromise
 }
 
-/** Get GeoGebra app name based on applet type */
-function getAppName(appletType: AppletType): string {
-  const appNames: Record<AppletType, string> = {
-    graphing: 'graphing',
-    geometry: 'geometry',
-    '3d': '3d',
-    classic: 'classic',
-    cas: 'cas',
-    scientific: 'scientific',
-  }
-  return appNames[appletType] || 'graphing'
-}
+/** Parse command string to extract method name and arguments */
+function parseCommandArgs(command: string): { methodName: string; args: unknown[] } | null {
+  const trimmed = command.trim()
 
-/** Create stable config key from config object */
-function getConfigKey(config: AppletConfig): string {
-  return `${config.width}-${config.height}-${config.showToolBar}-${config.showAlgebraInput}-${config.showMenuBar}-${config.showAlgebraView}`
+  // Handle API methods (camelCase with parentheses)
+  if (trimmed.startsWith('set') || trimmed.startsWith('Set')) {
+    const match = trimmed.match(/^([^(]+)\((.*)\)$/)
+    if (match) {
+      const methodName = match[1]
+      const argsStr = match[2]
+
+      // Parse arguments
+      const args = argsStr.split(',').map(arg => {
+        const argTrimmed = arg.trim()
+        // Try to parse as number
+        if (!isNaN(Number(argTrimmed)) && argTrimmed !== '') {
+          return Number(argTrimmed)
+        }
+        // Parse as boolean
+        if (argTrimmed === 'true') return true
+        if (argTrimmed === 'false') return false
+        // Return as string (remove quotes if present)
+        return argTrimmed.replace(/^["']|["']$/g, '')
+      })
+
+      return { methodName, args }
+    }
+  }
+
+  return null
 }
 
 export function GeoGebraApplet({
@@ -75,28 +114,30 @@ export function GeoGebraApplet({
   commands = [],
   config = {},
   className = '',
+  onError,
 }: GeoGebraAppletProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const appletRef = useRef<any>(null)
-  const timeoutsRef = useRef<number[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [isReady, setIsReady] = useState(false)
+  const { addTimeout, clearAllTimeouts } = useTrackedTimeouts()
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
 
-  // Stable config key for effect dependencies
-  const configKey = getConfigKey(config)
+  // Memoize config values to avoid unnecessary re-renders
+  const {
+    width = 800,
+    height = 400,
+    showToolBar = false,
+    showAlgebraInput = false,
+    showMenuBar = false,
+    showAlgebraView = true,
+  } = config
 
-  // Helper to track timeouts for cleanup
-  const addTimeout = (id: number) => {
-    timeoutsRef.current.push(id)
-    return id
-  }
-
-  const clearAllTimeouts = () => {
-    timeoutsRef.current.forEach(id => clearTimeout(id))
-    timeoutsRef.current = []
-  }
+  const handleError = useCallback((err: Error) => {
+    setStatus('error')
+    setErrorMessage(err.message)
+    onError?.(err)
+  }, [onError])
 
   // Load GeoGebra script and initialize applet
   useEffect(() => {
@@ -104,27 +145,25 @@ export function GeoGebraApplet({
 
     async function initApplet() {
       try {
-        setIsLoading(true)
-        setError(null)
+        setStatus('loading')
+        setErrorMessage(null)
 
         // Load the GeoGebra script
         await loadGeoGebraScript()
 
         if (!isMounted || !containerRef.current) return
 
-        const appName = getAppName(appletType)
-        const width = config.width || 800
-        const height = config.height || 400
+        const appName = APPLET_TYPE_NAMES[appletType] || 'graphing'
 
         // Create applet parameters
         const parameters = {
           appName,
           width,
           height,
-          showToolBar: config.showToolBar ?? false,
-          showAlgebraInput: config.showAlgebraInput ?? false,
-          showMenuBar: config.showMenuBar ?? false,
-          showAlgebraView: config.showAlgebraView ?? true, // Default to true for backward compatibility
+          showToolBar,
+          showAlgebraInput,
+          showMenuBar,
+          showAlgebraView,
           enableRightClick: false,
           enableShiftDragZoom: true,
           showResetIcon: false,
@@ -154,7 +193,7 @@ export function GeoGebraApplet({
           })
 
           // Poll for applet readiness as backup
-          const checkApplet = () => {
+          const checkApplet = async () => {
             if (resolved) return
             // Check if applet is available on window
             const appletApi = (window as unknown as { ggbApplet?: { evalCommand?: () => void } }).ggbApplet
@@ -162,42 +201,35 @@ export function GeoGebraApplet({
               resolved = true
               resolve()
             } else {
-              setTimeout(checkApplet, 500)
+              await delay(POLL_INTERVAL_MS)
+              if (!resolved) checkApplet()
             }
           }
 
           // Start polling after a short delay
-          setTimeout(checkApplet, 1000)
+          addTimeout(() => checkApplet(), INITIAL_POLL_DELAY_MS)
 
-          // Timeout after 45 seconds
-          setTimeout(() => {
+          // Timeout after specified duration
+          addTimeout(() => {
             if (!resolved) {
               resolved = true
               reject(new Error('Applet injection timeout'))
             }
-          }, 45000)
+          }, INJECTION_TIMEOUT_MS)
         })
 
         if (!isMounted) return
 
-        // Wait for the applet to be fully available
+        // Wait for the applet to be fully available using polling
         let retryCount = 0
-        const maxRetries = 20
-        const checkAppletReady = () => {
+        while (retryCount < MAX_RETRIES && !appletRef.current) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const api = (window as any).ggbApplet
           if (api && typeof api.evalCommand === 'function') {
-            return api
-          }
-          return null
-        }
-
-        while (retryCount < maxRetries && !appletRef.current) {
-          appletRef.current = checkAppletReady()
-          if (!appletRef.current) {
+            appletRef.current = api
+          } else {
             retryCount++
-            // eslint-disable-next-line no-await-in-loop
-            await new Promise(r => setTimeout(r, 500))
+            await delay(POLL_INTERVAL_MS)
           }
         }
 
@@ -206,27 +238,26 @@ export function GeoGebraApplet({
         }
 
         // Hide algebra view if configured (with delay to ensure applet is stable)
-        if (config.showAlgebraView === false) {
+        if (showAlgebraView === false) {
           const api = appletRef.current
-          // Use setPerspective to show only drawing view (no algebra view)
-          addTimeout(window.setTimeout(() => {
+          addTimeout(() => {
             if (typeof api.setPerspective === 'function') {
               try {
-                api.setPerspective('D')  // D = Drawing view only
+                api.setPerspective('D') // D = Drawing view only
               } catch (e) {
                 console.warn('Failed to set perspective:', e)
               }
             }
-          }, 1000))
+          }, PERSPECTIVE_DELAY_MS)
         }
 
-        setIsReady(true)
-        setIsLoading(false)
+        if (isMounted) {
+          setStatus('ready')
+        }
       } catch (err) {
-        if (!isMounted) return
-        const errorMsg = err instanceof Error ? err.message : 'Failed to load GeoGebra applet'
-        setError(errorMsg)
-        setIsLoading(false)
+        if (isMounted) {
+          handleError(err instanceof Error ? err : new Error('Failed to load GeoGebra applet'))
+        }
       }
     }
 
@@ -240,18 +271,17 @@ export function GeoGebraApplet({
         appletRef.current.remove()
       }
     }
-  }, [appletType, configKey])
+  }, [appletType, width, height, showToolBar, showAlgebraInput, showMenuBar, showAlgebraView, addTimeout, clearAllTimeouts, handleError])
 
   // Execute commands when applet is ready or commands change
   useEffect(() => {
-    if (!isReady || !appletRef.current || commands.length === 0) return
+    if (status !== 'ready' || !appletRef.current || commands.length === 0) return
 
     const api = appletRef.current
-    const shouldClearConstruction = config.showAlgebraView !== false
+    const shouldClearConstruction = showAlgebraView !== false
 
     // Execute commands with a delay to ensure applet is fully initialized
-    // Especially after setPerspective which may reset the view
-    const timer = window.setTimeout(() => {
+    addTimeout(() => {
       try {
         // Only clear construction if not showing clean view (setPerspective handles this)
         if (shouldClearConstruction && typeof api.newConstruction === 'function') {
@@ -261,40 +291,12 @@ export function GeoGebraApplet({
         // Execute each command
         for (const command of commands) {
           try {
-            const cmd = command.trim()
+            const parsed = parseCommandArgs(command)
 
-            // Handle API methods (camelCase with parentheses)
-            if (cmd.startsWith('set') || cmd.startsWith('Set')) {
-              const match = cmd.match(/^([^(]+)\((.*)\)$/)
-              if (match) {
-                const methodName = match[1]
-                const argsStr = match[2]
-
-                // Parse arguments
-                const args = argsStr.split(',').map(arg => {
-                  const trimmed = arg.trim()
-                  // Try to parse as number
-                  if (!isNaN(Number(trimmed)) && trimmed !== '') {
-                    return Number(trimmed)
-                  }
-                  // Parse as boolean
-                  if (trimmed === 'true') return true
-                  if (trimmed === 'false') return false
-                  // Return as string (remove quotes if present)
-                  return trimmed.replace(/^["']|["']$/g, '')
-                })
-
-                // Call the API method if it exists
-                if (typeof api[methodName] === 'function') {
-                  api[methodName](...args)
-                  continue
-                }
-              }
-            }
-
-            // Otherwise use evalCommand for standard GeoGebra commands
-            if (typeof api.evalCommand === 'function') {
-              api.evalCommand(cmd)
+            if (parsed && typeof api[parsed.methodName] === 'function') {
+              api[parsed.methodName](...parsed.args)
+            } else if (typeof api.evalCommand === 'function') {
+              api.evalCommand(command.trim())
             }
           } catch (cmdError) {
             console.warn('Failed to execute GeoGebra command:', command, cmdError)
@@ -303,16 +305,14 @@ export function GeoGebraApplet({
       } catch (err) {
         console.error('Error executing GeoGebra commands:', err)
       }
-    }, 500)
+    }, COMMAND_EXECUTION_DELAY_MS)
+  }, [status, commands, showAlgebraView, addTimeout])
 
-    return () => clearTimeout(timer)
-  }, [isReady, commands, config.showAlgebraView])
-
-  if (error) {
+  if (status === 'error') {
     return (
       <div className={`bg-red-50 border border-red-200 rounded-xl p-4 ${className}`}>
         <p className="text-red-600 text-sm">
-          <span className="font-semibold">Diagram Error:</span> {error}
+          <span className="font-semibold">Diagram Error:</span> {errorMessage}
         </p>
         <p className="text-red-500 text-xs mt-2">
           Please check your internet connection and try again.
@@ -323,7 +323,7 @@ export function GeoGebraApplet({
 
   return (
     <div className={`relative ${className}`}>
-      {isLoading && (
+      {status === 'loading' && (
         <div className="absolute inset-0 bg-slate-50 rounded-xl flex items-center justify-center">
           <div className="text-center">
             <div className="w-8 h-8 border-3 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-2" />
@@ -335,30 +335,12 @@ export function GeoGebraApplet({
         ref={containerRef}
         className="rounded-xl overflow-hidden border border-border"
         style={{
-          minHeight: config.height || 400,
+          minHeight: height,
           maxWidth: '100%',
         }}
       />
     </div>
   )
-}
-
-// TypeScript declarations for GeoGebra global objects
-declare global {
-  interface Window {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    ggbApplet?: any
-    GGBApplet?: new (
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      parameters: any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      javaCodebase?: any
-    ) => {
-      inject: (container: HTMLElement | null, type: string, callback?: () => void) => unknown
-      getAppletNumber?: () => number
-      remove?: () => void
-    }
-  }
 }
 
 export default GeoGebraApplet

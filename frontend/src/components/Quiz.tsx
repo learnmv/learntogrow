@@ -236,6 +236,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                     commands={currentQuestion.geogebra_commands}
                     config={currentQuestion.applet_config}
                     className="w-full"
+                    onError={(err) => console.warn('GeoGebra applet error:', err)}
                   />
                 </motion.div>
               )}
