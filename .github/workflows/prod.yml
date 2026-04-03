@@ -145,3 +145,25 @@ jobs:
             - Versioned images also tagged with `v${{ needs.version.outputs.version }}`
           draft: false
           prerelease: false
+
+  cleanup:
+    needs: deploy
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Cleanup old backend images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: learntogrow-backend
+          package-type: container
+          min-versions-to-keep: 2
+          delete-only-untagged-versions: true
+
+      - name: Cleanup old frontend images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: learntogrow-frontend
+          package-type: container
+          min-versions-to-keep: 2
+          delete-only-untagged-versions: true
