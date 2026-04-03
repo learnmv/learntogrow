@@ -20,6 +20,6 @@ configMapGenerator:
 
 images:
   - name: ghcr.io/learnmv/learntogrow-backend
-    newTag: prod
+    newTag: stable
   - name: ghcr.io/learnmv/learntogrow-frontend
-    newTag: prod
+    newTag: stable
