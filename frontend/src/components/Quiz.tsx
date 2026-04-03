@@ -4,7 +4,6 @@ import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle } from
 import { fetchStandards } from '../services/standards'
 import { generateQuestion } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
-import { GeoGebraApplet } from './GeoGebraApplet'
 import type { Standard } from '../types/standards'
 import type { GeneratedQuestion, QuestionGenerationRequest } from '../types/questions'
 
@@ -23,7 +22,6 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generatingQuestion, setGeneratingQuestion] = useState(false)
-  const [diagramError, setDiagramError] = useState<string | null>(null)
 
   // Fetch standards on mount
   useEffect(() => {
@@ -52,7 +50,6 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
       setGeneratingQuestion(true)
       setSelectedAnswer(null)
       setShowResult(false)
-      setDiagramError(null)
 
       try {
         const request: QuestionGenerationRequest = {
@@ -217,28 +214,9 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
               {/* Question Text */}
               <h2
-                className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
+                className="font-display text-2xl font-semibold text-text mb-8 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question) }}
               />
-
-              {/* GeoGebra Diagram */}
-              {currentQuestion.requires_diagram && currentQuestion.geogebra_commands && (
-                <div className="mb-6">
-                  {diagramError ? (
-                    <div className="p-4 bg-coral-50 border border-coral-200 rounded-xl text-coral-700 text-sm">
-                      <p className="font-medium">Diagram Error</p>
-                      <p className="text-coral-600">{diagramError}</p>
-                    </div>
-                  ) : (
-                    <GeoGebraApplet
-                      commands={currentQuestion.geogebra_commands}
-                      appletType={currentQuestion.applet_type}
-                      config={currentQuestion.applet_config}
-                      onError={(error) => setDiagramError(error)}
-                    />
-                  )}
-                </div>
-              )}
 
               {/* Options */}
               <div className="space-y-3">
