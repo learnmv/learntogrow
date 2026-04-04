@@ -2,10 +2,10 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image, AlertTriangle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
-import { generateQuestion } from '../services/questions'
-import { cn, renderMathToHtml } from '../lib/utils'
+import { fetchQuestionsByStandard } from '../services/questions'
+import { cn, renderMathToHtml, getRandomElement } from '../lib/utils'
 import type { Standard } from '../types/standards'
-import type { GeneratedQuestion, QuestionGenerationRequest } from '../types/questions'
+import type { QuestionFromDB } from '../types/questions'
 import { GeoGebraApplet } from './GeoGebraApplet'
 
 interface QuizProps {
@@ -29,7 +29,7 @@ interface SavedProgress {
 export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [standards, setStandards] = useState<Standard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
-  const [currentQuestion, setCurrentQuestion] = useState<GeneratedQuestion | null>(null)
+  const [currentQuestion, setCurrentQuestion] = useState<QuestionFromDB | null>(null)
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -109,20 +109,27 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
   }, [currentIndex, answers, subjectId, gradeId, loading, standards.length])
 
-  // Generate question function (extracted for reuse)
-  const loadQuestion = useCallback(async () => {
+  // Load question from pre-generated questions
+  const loadQuestion = useCallback(async (isRetry = false) => {
     if (standards.length === 0) return
 
     setGeneratingQuestion(true)
     setError(null)
-    setRetryCount(0)
+    if (!isRetry) {
+      setRetryCount(0)
+    }
 
     try {
-      const request: QuestionGenerationRequest = {
-        standard_id: standards[currentIndex].id,
-        question_type: 'multiple_choice',
+      // Fetch up to 50 questions, then pick one randomly
+      const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 50)
+
+      const question = getRandomElement(questions)
+      if (!question) {
+        setError('No questions available for this standard.')
+        setCurrentQuestion(null)
+        return
       }
-      const question = await generateQuestion(request)
+
       setCurrentQuestion(question)
       // Check if we have a saved answer for this question
       const savedAnswer = answers[currentIndex]
@@ -134,8 +141,8 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
         setShowResult(false)
       }
     } catch (err) {
-      console.error('Failed to generate question:', err)
-      setError('Failed to generate question. Please try again.')
+      console.error('Failed to load questions:', err)
+      setError('Failed to load questions. Please try again.')
     } finally {
       setGeneratingQuestion(false)
     }
@@ -160,14 +167,14 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
   const handleRetry = async () => {
     setRetryCount(prev => prev + 1)
-    await loadQuestion()
+    await loadQuestion(true)
   }
 
   const handleAnswerSelect = (value: string) => {
     setSelectedAnswer(value)
     setShowResult(true)
     // Save answer to state and storage
-    const isCorrect = value === currentQuestion?.answer
+    const isCorrect = value === currentQuestion?.correct_answer
     setAnswers(prev => ({
       ...prev,
       [currentIndex]: { selected: value, correct: isCorrect }
@@ -217,12 +224,12 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
               {generatingQuestion ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Retrying...
+                  Loading...
                 </>
               ) : (
                 <>
                   <RefreshCw className="w-4 h-4" />
-                  Retry Question
+                  Try Again
                 </>
               )}
             </button>
@@ -313,7 +320,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
             >
               <div className="text-center">
                 <div className="w-12 h-12 border-4 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-4" />
-                <p className="text-text-muted font-display">Generating question...</p>
+                <p className="text-text-muted font-display">Loading question...</p>
               </div>
             </motion.div>
           ) : currentQuestion ? (
@@ -338,7 +345,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
               {/* Question Text */}
               <h2
                 className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
-                dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question) }}
+                dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
 
               {/* GeoGebra Diagram */}
@@ -378,7 +385,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                           </p>
                           <p className="text-amber-700 text-sm mt-1">
                             This question requires a visual diagram that could not be loaded.
-                            You can still answer based on the description, or try regenerating the question.
+                            You can still answer based on the description, or try loading a different question.
                           </p>
                           <button
                             onClick={handleRetry}
@@ -388,12 +395,12 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                             {generatingQuestion ? (
                               <>
                                 <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-600 rounded-full animate-spin" />
-                                Regenerating...
+                                Loading...
                               </>
                             ) : (
                               <>
                                 <RefreshCw className="w-3 h-3" />
-                                Regenerate Question
+                                Load New Question
                               </>
                             )}
                           </button>
@@ -406,9 +413,9 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
               {/* Options */}
               <div className="space-y-3">
-                {currentQuestion.options.map((option, index) => {
+                {(currentQuestion.options || []).map((option, index) => {
                   const isSelected = selectedAnswer === option
-                  const isCorrectAnswer = option === currentQuestion.answer
+                  const isCorrectAnswer = option === currentQuestion.correct_answer
                   const showCorrectness = showResult && (isSelected || isCorrectAnswer)
 
                   return (
@@ -455,7 +462,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
               {/* Explanation */}
               <AnimatePresence>
-                {showResult && (
+                {showResult && currentQuestion.explanation && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}

@@ -3,12 +3,12 @@ import logging
 import re
 import time
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Standard
+from app.models import Standard, Question
 from app.prompts import format_prompt, AppletType
 
 logger = logging.getLogger(__name__)
@@ -92,12 +92,26 @@ def clean_option_text(option: str) -> str:
 
 
 class QuestionService:
-    """Service for generating questions using Ollama."""
+    """Service for generating and fetching questions."""
 
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_settings()
         self.ollama_url = f"{self.settings.OLLAMA_URL}/api/generate"
+
+    def get_questions_by_standard(
+        self,
+        standard_id: int,
+        limit: Optional[int] = None
+    ) -> List[Question]:
+        """Fetch active questions for a specific standard."""
+        query = self.db.query(Question).filter(
+            Question.standard_id == standard_id,
+            Question.is_active == True
+        )
+        if limit:
+            query = query.limit(limit)
+        return query.all()
 
     def _build_prompt(
         self,

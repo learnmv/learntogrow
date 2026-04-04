@@ -1,9 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from typing import List, Optional
 
 from app.dependencies import get_db
 from app.services.questions import QuestionService
-from app.schemas.questions import QuestionGenerateRequest, QuestionResponse
+from app.schemas.questions import (
+    QuestionGenerateRequest,
+    QuestionResponse,
+    QuestionDBResponse
+)
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 
@@ -44,3 +49,14 @@ def generate_question(
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating question: {str(e)}")
+
+
+@router.get("/standard/{standard_id}", response_model=List[QuestionDBResponse])
+def get_questions_by_standard(
+    standard_id: int,
+    limit: Optional[int] = Query(None, ge=1, le=100, description="Maximum number of questions to return"),
+    db: Session = Depends(get_db)
+):
+    service = QuestionService(db)
+    questions = service.get_questions_by_standard(standard_id, limit=limit)
+    return questions

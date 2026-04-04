@@ -53,3 +53,11 @@ export function debounce<T extends (...args: unknown[]) => void>(
 export function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
+
+/**
+ * Returns a random element from an array
+ */
+export function getRandomElement<T>(array: T[]): T | undefined {
+  if (array.length === 0) return undefined
+  return array[Math.floor(Math.random() * array.length)]
+}
