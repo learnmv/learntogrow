@@ -363,9 +363,9 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                         <span className="text-sm font-medium text-sage-700">Interactive Diagram</span>
                       </div>
                       <GeoGebraApplet
-                        appletType={currentQuestion.applet_type}
-                        commands={currentQuestion.geogebra_commands}
-                        config={currentQuestion.applet_config}
+                        appletType={currentQuestion.applet_type ?? undefined}
+                        commands={currentQuestion.geogebra_commands ?? undefined}
+                        config={currentQuestion.applet_config ?? undefined}
                         className="w-full"
                         onError={(err) => console.warn('GeoGebra applet error:', err)}
                       />
