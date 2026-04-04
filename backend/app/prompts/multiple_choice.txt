@@ -4,20 +4,37 @@ Standard: {standard_code} - {standard_description}
 Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
 Key Concepts: {keywords}
 
+CRITICAL REQUIREMENTS:
+1. The question MUST be complete with ALL numbers, variables, and values included
+2. The question text MUST make sense on its own without any missing information
+3. Provide exactly 4 multiple choice options with ACTUAL CONTENT (not just letters)
+4. The "answer" field MUST match EXACTLY one of the option texts
+
+EXAMPLES OF WRONG OUTPUTS (DO NOT DO THESE):
+- "Evaluate the expression when and ." (missing values)
+- ["A", "B", "C", "D"] (empty options)
+- ["A) 5", "B) 10", "C) 15", "D) 20"] (duplicate labels in options)
+
+CORRECT EXAMPLES:
+- "What is 2 + 3?" (complete question)
+- ["5", "10", "15", "20"] (just the values, no labels)
+- "answer": "5" (matches one option exactly)
+
 Requirements:
-- Create a clear, well-formed question
+- Create a clear, well-formed question with complete information
 - Test understanding of the standard's learning objectives
-- Provide the correct answer
+- Provide the correct answer that exactly matches one option
 - Include a brief explanation suitable for a student
-- Provide exactly 4 multiple choice options (A, B, C, D)
+- Provide exactly 4 multiple choice options (A, B, C, D) with actual content
 - Only one option should be correct
 - Distractors should be plausible but clearly wrong
+- DO NOT include "A)", "B)", etc. in the option text - just the values
 
 IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
 
 {{
-    "question": "the question text",
-    "options": ["option A", "option B", "option C", "option D"],
-    "answer": "the correct option text",
+    "question": "the complete question text with all values included",
+    "options": ["first option value", "second option value", "third option value", "fourth option value"],
+    "answer": "the correct option value (must match one option exactly)",
     "explanation": "explanation of why this is correct"
 }}

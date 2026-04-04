@@ -5,43 +5,67 @@ Difficulty: {difficulty:.1f}/1.0 (0=easy, 1=hard)
 Key Concepts: {keywords}
 Applet Type: {applet_type}
 
+CRITICAL REQUIREMENTS:
+1. The question MUST be complete with ALL values specified
+2. You MUST provide GeoGebra commands to create the diagram - this is REQUIRED
+3. The question should describe what the diagram shows and what the student should find
+4. Answer options should NOT include "A)", "B)" labels - just the values
+
 Requirements:
 - Create a clear, well-formed question that requires visual understanding
 - The question should reference the GeoGebra diagram
-- Provide the correct answer
+- Provide the correct answer that matches one option exactly
 - Include a brief explanation suitable for a student
 {question_specific_requirements}
 
-GEOGERA COMMANDS:
+GEOGEBRA COMMANDS (REQUIRED):
 Generate GeoGebra commands to create an appropriate diagram for this question.
 
 Available commands for {applet_type} applet:
 {applet_commands}
 
 Command Guidelines:
-- Use only the commands listed above
+- You MUST provide at least 3-8 commands to create a visible diagram
 - Create objects in logical order (points first, then shapes)
 - Use descriptive names (e.g., "vertexA", "triangleABC")
 - Set appropriate colors for clarity (red=255,0,0, blue=0,128,255, green=0,200,0)
 - Use SetFixed() for objects students should not move
 - Use SetVisible() to hide construction elements if needed
+- Use SetCoordSystem() to set appropriate viewing area
+- Use SetAxesVisible() and SetGridVisible() for clarity
+
+EXAMPLE OF GOOD COMMANDS:
+[
+    "A = (1, 2)",
+    "B = (4, 2)",
+    "C = (2, 5)",
+    "Triangle(A, B, C)",
+    "SetCoordSystem(-1, 6, -1, 6)",
+    "SetAxesVisible(true, true)",
+    "SetGridVisible(true)"
+]
+
+DO NOT leave geogebra_commands empty. The diagram is REQUIRED for this question.
 
 IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code blocks (no ```json). Do NOT add any text before or after the JSON.
 
 {{
-    "question": "the question text referencing the diagram",
+    "question": "the complete question text referencing the diagram",
     {answer_field}
     "explanation": "explanation of why this is correct",
     "geogebra_commands": [
         "command1",
         "command2",
-        "command3"
+        "command3",
+        "command4",
+        "command5"
     ],
     "applet_config": {{
         "width": 800,
-        "height": 600,
+        "height": 500,
         "showToolBar": false,
         "showAlgebraInput": false,
-        "showMenuBar": false
+        "showMenuBar": false,
+        "showAlgebraView": false
     }}
 }}

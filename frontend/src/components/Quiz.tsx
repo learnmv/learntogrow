@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image, AlertTriangle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { generateQuestion } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
@@ -14,6 +14,18 @@ interface QuizProps {
   onExit: () => void
 }
 
+// Storage key for quiz progress
+const PROGRESS_KEY = 'learntogrow_quiz_progress'
+const PROGRESS_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+interface SavedProgress {
+  subjectId: string
+  gradeId: string
+  currentIndex: number
+  answers: Record<number, { selected: string; correct: boolean }>
+  timestamp: number
+}
+
 export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [standards, setStandards] = useState<Standard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -23,6 +35,8 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [generatingQuestion, setGeneratingQuestion] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [answers, setAnswers] = useState<Record<number, { selected: string; correct: boolean }>>({})
 
   // Fetch standards on mount
   useEffect(() => {
@@ -43,31 +57,94 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     loadStandards()
   }, [subjectId, gradeId])
 
-  // Generate question when currentIndex changes
+  // Load progress from localStorage on mount
   useEffect(() => {
-    if (standards.length === 0) return
-
-    async function loadQuestion() {
-      setGeneratingQuestion(true)
-      setSelectedAnswer(null)
-      setShowResult(false)
-
-      try {
-        const request: QuestionGenerationRequest = {
-          standard_id: standards[currentIndex].id,
-          question_type: 'multiple_choice',
+    try {
+      const saved = localStorage.getItem(PROGRESS_KEY)
+      if (saved) {
+        const progress: SavedProgress = JSON.parse(saved)
+        // Check if saved progress matches current subject/grade
+        if (progress.subjectId === subjectId && progress.gradeId === gradeId) {
+          // Check if progress is from last 24 hours
+          const age = Date.now() - progress.timestamp
+          if (age < PROGRESS_EXPIRY_MS) {
+            setCurrentIndex(progress.currentIndex)
+            setAnswers(progress.answers)
+          }
         }
-        const question = await generateQuestion(request)
-        setCurrentQuestion(question)
-      } catch (err) {
-        setError('Failed to generate question')
-      } finally {
-        setGeneratingQuestion(false)
+      }
+    } catch (e) {
+      console.warn('Failed to load saved progress:', e)
+    }
+  }, [subjectId, gradeId])
+
+  // Debounced save progress to localStorage (prevents excessive writes)
+  const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!loading && standards.length > 0) {
+      // Clear pending save
+      if (pendingSaveRef.current) {
+        clearTimeout(pendingSaveRef.current)
+      }
+      // Debounce save by 500ms
+      pendingSaveRef.current = setTimeout(() => {
+        const progress: SavedProgress = {
+          subjectId,
+          gradeId,
+          currentIndex,
+          answers,
+          timestamp: Date.now()
+        }
+        try {
+          localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress))
+        } catch (e) {
+          console.warn('Failed to save progress:', e)
+        }
+      }, 500)
+    }
+    return () => {
+      if (pendingSaveRef.current) {
+        clearTimeout(pendingSaveRef.current)
       }
     }
+  }, [currentIndex, answers, subjectId, gradeId, loading, standards.length])
 
+  // Generate question function (extracted for reuse)
+  const loadQuestion = useCallback(async () => {
+    if (standards.length === 0) return
+
+    setGeneratingQuestion(true)
+    setError(null)
+    setRetryCount(0)
+
+    try {
+      const request: QuestionGenerationRequest = {
+        standard_id: standards[currentIndex].id,
+        question_type: 'multiple_choice',
+      }
+      const question = await generateQuestion(request)
+      setCurrentQuestion(question)
+      // Check if we have a saved answer for this question
+      const savedAnswer = answers[currentIndex]
+      if (savedAnswer) {
+        setSelectedAnswer(savedAnswer.selected)
+        setShowResult(true)
+      } else {
+        setSelectedAnswer(null)
+        setShowResult(false)
+      }
+    } catch (err) {
+      console.error('Failed to generate question:', err)
+      setError('Failed to generate question. Please try again.')
+    } finally {
+      setGeneratingQuestion(false)
+    }
+  }, [standards, currentIndex, answers])
+
+  // Generate question when currentIndex changes
+  useEffect(() => {
     loadQuestion()
-  }, [standards, currentIndex])
+  }, [loadQuestion])
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
@@ -81,9 +158,30 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
   }
 
+  const handleRetry = async () => {
+    setRetryCount(prev => prev + 1)
+    await loadQuestion()
+  }
+
   const handleAnswerSelect = (value: string) => {
     setSelectedAnswer(value)
     setShowResult(true)
+    // Save answer to state and storage
+    const isCorrect = value === currentQuestion?.answer
+    setAnswers(prev => ({
+      ...prev,
+      [currentIndex]: { selected: value, correct: isCorrect }
+    }))
+  }
+
+  const handleExit = () => {
+    // Clear saved progress when exiting
+    try {
+      localStorage.removeItem(PROGRESS_KEY)
+    } catch (e) {
+      console.warn('Failed to clear progress:', e)
+    }
+    onExit()
   }
 
   if (loading) {
@@ -104,13 +202,37 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
           <div className="w-16 h-16 bg-coral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <XCircle className="w-8 h-8 text-coral-600" />
           </div>
-          <p className="text-coral-600 font-display text-lg mb-6">{error}</p>
-          <button
-            onClick={onExit}
-            className="px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-medium hover:bg-sage-700 transition-colors"
-          >
-            Go Back
-          </button>
+          <p className="text-coral-600 font-display text-lg mb-2">{error}</p>
+          {retryCount > 0 && (
+            <p className="text-text-muted text-sm mb-4">
+              Retry attempt {retryCount}/3
+            </p>
+          )}
+          <div className="flex gap-3 justify-center">
+            <button
+              onClick={handleRetry}
+              disabled={generatingQuestion}
+              className="flex items-center gap-2 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-medium hover:bg-sage-700 transition-colors disabled:opacity-50"
+            >
+              {generatingQuestion ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Retrying...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Retry Question
+                </>
+              )}
+            </button>
+            <button
+              onClick={handleExit}
+              className="px-6 py-3 border-2 border-sage-200 text-sage-700 rounded-xl font-display font-medium hover:bg-sage-50 transition-colors"
+            >
+              Exit Quiz
+            </button>
+          </div>
         </div>
       </div>
     )
@@ -150,7 +272,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
           className="flex items-center justify-between mb-8"
         >
           <button
-            onClick={onExit}
+            onClick={handleExit}
             className="flex items-center gap-2 text-text-muted hover:text-text transition-colors font-display"
           >
             <RotateCcw className="w-4 h-4" />
@@ -221,24 +343,65 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
 
               {/* GeoGebra Diagram */}
               {currentQuestion.requires_diagram && currentQuestion.applet_type && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.2 }}
-                  className="mb-6"
-                >
-                  <div className="flex items-center gap-2 mb-3">
-                    <Image className="w-4 h-4 text-sage-600" />
-                    <span className="text-sm font-medium text-sage-700">Interactive Diagram</span>
-                  </div>
-                  <GeoGebraApplet
-                    appletType={currentQuestion.applet_type}
-                    commands={currentQuestion.geogebra_commands}
-                    config={currentQuestion.applet_config}
-                    className="w-full"
-                    onError={(err) => console.warn('GeoGebra applet error:', err)}
-                  />
-                </motion.div>
+                <>
+                  {currentQuestion.geogebra_commands && currentQuestion.geogebra_commands.length > 0 ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="mb-6"
+                    >
+                      <div className="flex items-center gap-2 mb-3">
+                        <Image className="w-4 h-4 text-sage-600" />
+                        <span className="text-sm font-medium text-sage-700">Interactive Diagram</span>
+                      </div>
+                      <GeoGebraApplet
+                        appletType={currentQuestion.applet_type}
+                        commands={currentQuestion.geogebra_commands}
+                        config={currentQuestion.applet_config}
+                        className="w-full"
+                        onError={(err) => console.warn('GeoGebra applet error:', err)}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200"
+                    >
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="text-amber-800 font-medium text-sm">
+                            Diagram Unavailable
+                          </p>
+                          <p className="text-amber-700 text-sm mt-1">
+                            This question requires a visual diagram that could not be loaded.
+                            You can still answer based on the description, or try regenerating the question.
+                          </p>
+                          <button
+                            onClick={handleRetry}
+                            disabled={generatingQuestion}
+                            className="mt-3 flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg text-sm font-medium hover:bg-amber-200 transition-colors disabled:opacity-50"
+                          >
+                            {generatingQuestion ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-600 rounded-full animate-spin" />
+                                Regenerating...
+                              </>
+                            ) : (
+                              <>
+                                <RefreshCw className="w-3 h-3" />
+                                Regenerate Question
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </>
               )}
 
               {/* Options */}
