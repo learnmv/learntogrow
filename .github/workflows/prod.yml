@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
+  REGISTRY: ghcr
   BACKEND_IMAGE: ghcr.io/learnmv/learntogrow-backend:stable
   FRONTEND_IMAGE: ghcr.io/learnmv/learntogrow-frontend:stable
 
@@ -120,14 +120,14 @@ jobs:
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/prod-learntogrow-backend -n default --timeout=300s
-          kubectl rollout status deployment/prod-learntogrow-frontend -n default --timeout=300s
+          kubectl rollout status deployment/backend -n learntogrow-prod --timeout=300s
+          kubectl rollout status deployment/frontend -n learntogrow-prod --timeout=300s
 
       - name: Verify deployment
         run: |
           echo "=== Production Deployment ==="
-          kubectl get pods -n default
-          kubectl get svc -n default
+          kubectl get pods -n learntogrow-prod
+          kubectl get svc -n learntogrow-prod
 
       - name: Create GitHub Release
         uses: actions/create-release@v1
