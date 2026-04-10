@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image, AlertTriangle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
-import { cn, renderMathToHtml, getRandomElement } from '../lib/utils'
+import { cn, renderMathToHtml } from '../lib/utils'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 import { GeoGebraApplet } from './GeoGebraApplet'
@@ -120,10 +120,10 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
 
     try {
-      // Fetch up to 50 questions, then pick one randomly
-      const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 50)
+      // Fetch a single question
+      const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 1)
 
-      const question = getRandomElement(questions)
+      const question = questions[0] || null
       if (!question) {
         setError('No questions available for this standard.')
         setCurrentQuestion(null)
