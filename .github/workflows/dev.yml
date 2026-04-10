@@ -125,9 +125,8 @@ jobs:
       - name: Update image tags and deploy
         run: |
           cd k8s/overlays/dev
-          # Update image tags in kustomization
-          kustomize edit set image ghcr.io/learnmv/learntogrow-backend:${{ steps.vars.outputs.image_tag }}
-          kustomize edit set image ghcr.io/learnmv/learntogrow-frontend:${{ steps.vars.outputs.image_tag }}
+          # Update image tags in kustomization (using sed since kustomize CLI not installed)
+          sed -i "s/newTag: dev/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
           cat kustomization.yaml
           # Deploy
           kubectl apply -k .
