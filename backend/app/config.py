@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # Ollama settings
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "deepseek-r1:1.5b"
-    OLLAMA_TIMEOUT: int = 120
+    OLLAMA_TIMEOUT: int = 300
 
     class Config:
         env_file = ".env"

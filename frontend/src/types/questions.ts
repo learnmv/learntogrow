@@ -1,11 +1,29 @@
+import type { AppletType } from '../lib/geogebra-commands'
+
 export type QuestionType = 'multiple_choice' | 'open_ended'
 
-export interface GeneratedQuestion {
-  question: string
+export interface AppletConfig {
+  width?: number
+  height?: number
+  showToolBar?: boolean
+  showAlgebraInput?: boolean
+  showMenuBar?: boolean
+  showAlgebraView?: boolean
+}
+
+interface QuestionContent {
   question_type: QuestionType
-  options: string[]
+  options: string[] | null
+  explanation: string | null
+  requires_diagram: boolean
+  applet_type: AppletType | null
+  geogebra_commands: string[] | null
+  applet_config: AppletConfig | null
+}
+
+export interface GeneratedQuestion extends QuestionContent {
+  question: string
   answer: string
-  explanation: string
   standard_code: string
   difficulty: number
 }
@@ -16,4 +34,16 @@ export interface QuestionGenerationRequest {
   question_type?: QuestionType
   custom_prompt?: string
   model?: string
+}
+
+export interface QuestionFromDB extends QuestionContent {
+  id: number
+  standard_id: number
+  question_text: string
+  correct_answer: string
+  difficulty: number | null
+  is_active: boolean
+  created_at: string | null
+  updated_at: string | null
+  generated_by: string | null
 }

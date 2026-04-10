@@ -1,0 +1,34 @@
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, TIMESTAMP, Boolean, JSON
+from sqlalchemy.orm import relationship
+from app.database import Base
+
+
+class Question(Base):
+    """Generated questions with metadata and optional GeoGebra diagrams."""
+    __tablename__ = "questions"
+
+    id = Column(Integer, primary_key=True)
+    standard_id = Column(Integer, ForeignKey("standards.id", ondelete="CASCADE"), nullable=False)
+
+    # Core question content
+    question_text = Column(Text, nullable=False)
+    question_type = Column(String(50), nullable=False, default="multiple_choice")
+    options = Column(JSON)
+    correct_answer = Column(Text, nullable=False)
+    explanation = Column(Text)
+
+    # Metadata
+    difficulty = Column(Numeric(3, 2))
+    requires_diagram = Column(Boolean, default=False)
+    applet_type = Column(String(20))
+    geogebra_commands = Column(JSON)
+    applet_config = Column(JSON)
+
+    # Tracking
+    created_at = Column(TIMESTAMP)
+    updated_at = Column(TIMESTAMP)
+    generated_by = Column(String(100))
+    is_active = Column(Boolean, default=True)
+
+    # Relationships
+    standard = relationship("Standard", backref="questions")

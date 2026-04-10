@@ -58,10 +58,47 @@ CREATE TABLE standards (
 );
 
 -- ============================================
-
+-- Layer 2: Questions (Generated Content)
 -- ============================================
--- ============================================
 
+CREATE TABLE questions (
+    id SERIAL PRIMARY KEY,
+    standard_id INTEGER REFERENCES standards(id) ON DELETE CASCADE,
+
+    -- Core question content
+    question_text TEXT NOT NULL,
+    question_type VARCHAR(50) NOT NULL DEFAULT 'multiple_choice',
+    options JSONB,
+    correct_answer TEXT NOT NULL,
+    explanation TEXT,
+
+    -- Metadata
+    difficulty DECIMAL(3,2) CHECK (difficulty BETWEEN 0.00 AND 1.00),
+    requires_diagram BOOLEAN DEFAULT FALSE,
+    applet_type VARCHAR(20),
+    geogebra_commands JSONB,
+    applet_config JSONB,
+
+    -- Tracking
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    generated_by VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE
+);
+
+-- Trigger to update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+CREATE TRIGGER update_questions_updated_at
+    BEFORE UPDATE ON questions
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
 -- Layer 4: Users
@@ -94,6 +131,10 @@ CREATE INDEX idx_domains_subject ON domains(subject_id);
 CREATE INDEX idx_grades_subject ON grades(subject_id);
 
 -- Question management
+CREATE INDEX idx_questions_standard ON questions(standard_id);
+CREATE INDEX idx_questions_type ON questions(question_type);
+CREATE INDEX idx_questions_difficulty ON questions(difficulty);
+CREATE INDEX idx_questions_active ON questions(is_active);
 
 -- User activity
 
@@ -186,3 +227,4 @@ COMMENT ON TABLE grades IS 'Grade levels within subjects';
 COMMENT ON TABLE domains IS 'Major conceptual domains within subjects';
 COMMENT ON TABLE clusters IS 'Clusters of related standards';
 COMMENT ON TABLE standards IS 'Individual learning standards with metadata';
+COMMENT ON TABLE questions IS 'Generated questions with metadata and optional GeoGebra diagrams';

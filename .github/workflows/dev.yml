@@ -116,35 +116,32 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       - name: Setup kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
 
-      - name: Update image tags in kustomization
+      - name: Update image tags and deploy
         run: |
           cd k8s/overlays/dev
+          # Update image tags in kustomization (using sed since kustomize CLI not installed)
           sed -i "s/newTag: dev/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
           cat kustomization.yaml
-
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl apply -k k8s/overlays/dev/ --validate=false
+          # Deploy
+          kubectl apply -k .
 
       - name: Wait for rollout
         run: |
-          kubectl rollout status deployment/dev-learntogrow-backend -n default --timeout=300s
-          kubectl rollout status deployment/dev-learntogrow-frontend -n default --timeout=300s
+          kubectl rollout status deployment/backend -n learntogrow-dev --timeout=300s
+          kubectl rollout status deployment/frontend -n learntogrow-dev --timeout=300s
 
       - name: Verify deployment
         run: |
           echo "Deployed images:"
-          kubectl get pods -n default -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.containers[0].image}{"\n"}{end}'
-          kubectl get pods -n default
-          kubectl get svc -n default
+          kubectl get pods -n learntogrow-dev -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.containers[0].image}{"\n"}{end}'
+          kubectl get pods -n learntogrow-dev
+          kubectl get svc -n learntogrow-dev
 
   cleanup:
     needs: deploy

@@ -3,5 +3,6 @@ from .grade import Grade
 from .domain import Domain
 from .cluster import Cluster
 from .standard import Standard
+from .question import Question
 
-__all__ = ["Subject", "Grade", "Domain", "Cluster", "Standard"]
+__all__ = ["Subject", "Grade", "Domain", "Cluster", "Standard", "Question"]

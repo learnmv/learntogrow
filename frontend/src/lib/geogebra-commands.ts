@@ -5,6 +5,18 @@
 
 export type AppletType = 'graphing' | 'geometry' | '3d' | 'classic' | 'cas' | 'scientific';
 
+/**
+ * Map AppletType to GeoGebra app name strings
+ */
+export const APPLET_TYPE_NAMES: Record<AppletType, string> = {
+  graphing: 'graphing',
+  geometry: 'geometry',
+  '3d': '3d',
+  classic: 'classic',
+  cas: 'cas',
+  scientific: 'scientific',
+};
+
 export interface AppletCapabilities {
   evalCommands: string[];      // Commands for evalCommand()
   apiMethods: string[];        // JavaScript API methods
