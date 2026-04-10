@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr
+  REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/learnmv/learntogrow
 
 jobs:
