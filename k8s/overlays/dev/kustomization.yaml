@@ -23,7 +23,3 @@ images:
     newTag: dev
   - name: ghcr.io/learnmv/learntogrow-frontend
     newTag: dev
-
-# Patch to use dev-specific secrets
-patches:
-  - path: backend-secrets-patch.yaml

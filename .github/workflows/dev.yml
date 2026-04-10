@@ -116,23 +116,21 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
       - name: Setup kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
 
-      - name: Update image tags in kustomization
+      - name: Update image tags and deploy
         run: |
           cd k8s/overlays/dev
-          sed -i "s/newTag: dev/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
+          # Update image tags in kustomization
+          kustomize edit set image ghcr.io/learnmv/learntogrow-backend:${{ steps.vars.outputs.image_tag }}
+          kustomize edit set image ghcr.io/learnmv/learntogrow-frontend:${{ steps.vars.outputs.image_tag }}
           cat kustomization.yaml
-
-      - name: Deploy to Kubernetes
-        run: |
-          kubectl apply -k k8s/overlays/dev/ --validate=false
+          # Deploy
+          kubectl apply -k .
 
       - name: Wait for rollout
         run: |
