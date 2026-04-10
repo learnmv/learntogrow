@@ -25,3 +25,7 @@ images:
     newTag: stable
   - name: ghcr.io/learnmv/learntogrow-frontend
     newTag: stable
+
+# Patch to use prod-specific secrets
+patches:
+  - path: backend-secrets-patch.yaml
