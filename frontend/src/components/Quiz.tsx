@@ -5,6 +5,8 @@ import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
 import { GraphingApplet } from './GraphingApplet'
+import { GeometryApplet } from './GeometryApplet'
+import { ThreeDApplet } from './ThreeDApplet'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -348,13 +350,36 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
 
-              {/* GeoGebra Applet - for graphing and geometry questions */}
-              {(currentQuestion.applet_type === 'graphing' || currentQuestion.applet_type === 'geometry') && (
+              {/* GeoGebra Applet - for graphing questions */}
+              {currentQuestion.applet_type === 'graphing' && (
                 <div className="mb-6">
                   <GraphingApplet
                     commands={currentQuestion.geogebra_commands || undefined}
                     config={currentQuestion.applet_config || undefined}
-                    appletType={currentQuestion.applet_type}
+                    height={400}
+                    width={600}
+                  />
+                </div>
+              )}
+
+              {/* GeoGebra Applet - for geometry questions */}
+              {currentQuestion.applet_type === 'geometry' && (
+                <div className="mb-6">
+                  <GeometryApplet
+                    commands={currentQuestion.geogebra_commands || undefined}
+                    config={currentQuestion.applet_config || undefined}
+                    height={400}
+                    width={600}
+                  />
+                </div>
+              )}
+
+              {/* GeoGebra Applet - for 3D questions */}
+              {currentQuestion.applet_type === '3d' && (
+                <div className="mb-6">
+                  <ThreeDApplet
+                    commands={currentQuestion.geogebra_commands || undefined}
+                    config={currentQuestion.applet_config || undefined}
                     height={400}
                     width={600}
                   />
