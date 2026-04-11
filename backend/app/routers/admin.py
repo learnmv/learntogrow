@@ -5,10 +5,11 @@ from typing import List, Optional
 from app.dependencies import get_db
 from app.services import AdminService
 from app.routers.auth import require_role
-from app.schemas.auth import UserResponse, UserCreateAdmin, UserStatusUpdate
+from app.schemas.auth import UserResponse
 from app.schemas.admin import (
     QuestionGenerateRequestAdmin,
-    UserCreateAdmin as UserCreateAdminSchema,
+    UserCreateAdmin,
+    UserStatusUpdate,
     AdminDashboardStats,
 )
 from app.schemas.questions import QuestionResponse, QuestionEditRequest
@@ -46,7 +47,7 @@ def get_users(
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
-    user_data: UserCreateAdminSchema,
+    user_data: UserCreateAdmin,
     current_user: dict = Depends(require_role(["admin"])),
     db: Session = Depends(get_db)
 ):
