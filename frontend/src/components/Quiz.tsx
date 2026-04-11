@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Image, AlertTriangle, RefreshCw } from 'lucide-react'
+import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
-import { GeoGebraApplet } from './GeoGebraApplet'
 
 interface QuizProps {
   subjectId: string
@@ -347,69 +346,6 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                 className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
-
-              {/* GeoGebra Diagram */}
-              {currentQuestion.requires_diagram && currentQuestion.applet_type && (
-                <>
-                  {currentQuestion.geogebra_commands && currentQuestion.geogebra_commands.length > 0 ? (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="mb-6"
-                    >
-                      <div className="flex items-center gap-2 mb-3">
-                        <Image className="w-4 h-4 text-sage-600" />
-                        <span className="text-sm font-medium text-sage-700">Interactive Diagram</span>
-                      </div>
-                      <GeoGebraApplet
-                        appletType={currentQuestion.applet_type ?? undefined}
-                        commands={currentQuestion.geogebra_commands ?? undefined}
-                        config={currentQuestion.applet_config ?? undefined}
-                        className="w-full"
-                        onError={(err) => console.warn('GeoGebra applet error:', err)}
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: 0.2 }}
-                      className="mb-6 p-4 bg-amber-50 rounded-xl border border-amber-200"
-                    >
-                      <div className="flex items-start gap-3">
-                        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="text-amber-800 font-medium text-sm">
-                            Diagram Unavailable
-                          </p>
-                          <p className="text-amber-700 text-sm mt-1">
-                            This question requires a visual diagram that could not be loaded.
-                            You can still answer based on the description, or try loading a different question.
-                          </p>
-                          <button
-                            onClick={handleRetry}
-                            disabled={generatingQuestion}
-                            className="mt-3 flex items-center gap-2 px-4 py-2 bg-amber-100 text-amber-800 rounded-lg text-sm font-medium hover:bg-amber-200 transition-colors disabled:opacity-50"
-                          >
-                            {generatingQuestion ? (
-                              <>
-                                <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-600 rounded-full animate-spin" />
-                                Loading...
-                              </>
-                            ) : (
-                              <>
-                                <RefreshCw className="w-3 h-3" />
-                                Load New Question
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-                    </motion.div>
-                  )}
-                </>
-              )}
 
               {/* Options */}
               <div className="space-y-3">

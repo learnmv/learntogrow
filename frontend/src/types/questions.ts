@@ -1,24 +1,9 @@
-import type { AppletType } from '../lib/geogebra-commands'
-
 export type QuestionType = 'multiple_choice' | 'open_ended'
-
-export interface AppletConfig {
-  width?: number
-  height?: number
-  showToolBar?: boolean
-  showAlgebraInput?: boolean
-  showMenuBar?: boolean
-  showAlgebraView?: boolean
-}
 
 interface QuestionContent {
   question_type: QuestionType
   options: string[] | null
   explanation: string | null
-  requires_diagram: boolean
-  applet_type: AppletType | null
-  geogebra_commands: string[] | null
-  applet_config: AppletConfig | null
 }
 
 export interface GeneratedQuestion extends QuestionContent {
