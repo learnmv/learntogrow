@@ -7,6 +7,7 @@ import { cn, renderMathToHtml } from '../lib/utils'
 import { GraphingApplet } from './GraphingApplet'
 import { GeometryApplet } from './GeometryApplet'
 import { ThreeDApplet } from './ThreeDApplet'
+import { ClassicApplet } from './ClassicApplet'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -378,6 +379,18 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
               {currentQuestion.applet_type === '3d' && (
                 <div className="mb-6">
                   <ThreeDApplet
+                    commands={currentQuestion.geogebra_commands || undefined}
+                    config={currentQuestion.applet_config || undefined}
+                    height={400}
+                    width={600}
+                  />
+                </div>
+              )}
+
+              {/* GeoGebra Applet - for classic questions */}
+              {currentQuestion.applet_type === 'classic' && (
+                <div className="mb-6">
+                  <ClassicApplet
                     commands={currentQuestion.geogebra_commands || undefined}
                     config={currentQuestion.applet_config || undefined}
                     height={400}
