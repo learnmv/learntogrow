@@ -1,0 +1,114 @@
+import { get, post, patch, del } from './api';
+import { getAuthHeaders } from './auth';
+import type {
+  QuestionGenerateRequest,
+  QuestionGenerateResponse,
+  AdminDashboardStats,
+  PendingParentLink,
+  UserCreateRequest,
+  UserStatusUpdate,
+} from '../types/admin';
+import type { User } from '../types/auth';
+import type { QuestionFromDB } from '../types/questions';
+
+/**
+ * Get admin dashboard statistics
+ */
+export async function getDashboardStats(): Promise<AdminDashboardStats> {
+  return get<AdminDashboardStats>('/admin/dashboard/stats', { headers: getAuthHeaders() });
+}
+
+/**
+ * Get all users
+ */
+export async function getUsers(role?: string): Promise<User[]> {
+  const params = role ? `?role=${role}` : '';
+  return get<User[]>(`/admin/users${params}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Create new user
+ */
+export async function createUser(data: UserCreateRequest): Promise<User> {
+  return post<User>('/admin/users', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Update user status
+ */
+export async function updateUserStatus(userId: number, data: UserStatusUpdate): Promise<User> {
+  return patch<User>(`/admin/users/${userId}/status`, data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Delete user
+ */
+export async function deleteUser(userId: number): Promise<void> {
+  return del(`/admin/users/${userId}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Get pending parent links
+ */
+export async function getPendingLinks(): Promise<PendingParentLink[]> {
+  return get<PendingParentLink[]>('/admin/pending-links', { headers: getAuthHeaders() });
+}
+
+/**
+ * Approve parent link
+ */
+export async function approveParentLink(linkId: number): Promise<{ message: string }> {
+  return post(`/admin/approve-link/${linkId}`, {}, { headers: getAuthHeaders() });
+}
+
+/**
+ * Reject parent link
+ */
+export async function rejectParentLink(linkId: number, reason?: string): Promise<{ message: string }> {
+  return post(`/admin/reject-link/${linkId}`, { reason }, { headers: getAuthHeaders() });
+}
+
+/**
+ * Get questions
+ */
+export async function getAdminQuestions(
+  standardId?: number,
+  isActive?: boolean
+): Promise<QuestionFromDB[]> {
+  const params = new URLSearchParams();
+  if (standardId) params.append('standard_id', standardId.toString());
+  if (isActive !== undefined) params.append('is_active', isActive.toString());
+
+  const queryString = params.toString();
+  return get<QuestionFromDB[]>(`/admin/questions${queryString ? `?${queryString}` : ''}`, {
+    headers: getAuthHeaders(),
+  });
+}
+
+/**
+ * Update question
+ */
+export async function updateQuestion(questionId: number, updates: Partial<QuestionFromDB>): Promise<QuestionFromDB> {
+  return patch<QuestionFromDB>(`/admin/questions/${questionId}`, updates, { headers: getAuthHeaders() });
+}
+
+/**
+ * Delete question
+ */
+export async function deleteQuestion(questionId: number): Promise<void> {
+  return del(`/admin/questions/${questionId}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Toggle question status
+ */
+export async function toggleQuestionStatus(questionId: number): Promise<QuestionFromDB> {
+  return post<QuestionFromDB>(`/admin/questions/${questionId}/toggle-status`, {}, { headers: getAuthHeaders() });
+}
+
+/**
+ * Generate questions
+ */
+export async function generateQuestions(data: QuestionGenerateRequest): Promise<QuestionGenerateResponse> {
+  return post<QuestionGenerateResponse>('/admin/generate-questions', data, { headers: getAuthHeaders() });
+}

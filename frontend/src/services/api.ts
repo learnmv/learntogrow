@@ -40,12 +40,40 @@ export function get<T>(endpoint: string, options?: RequestInit): Promise<T> {
  */
 export function post<T>(
   endpoint: string,
-  data: unknown,
+  data?: unknown,
   options?: RequestInit
 ): Promise<T> {
   return fetchApi<T>(endpoint, {
     ...options,
     method: 'POST',
+    body: data ? JSON.stringify(data) : undefined,
+  })
+}
+
+/**
+ * PATCH request helper
+ */
+export function patch<T>(
+  endpoint: string,
+  data: unknown,
+  options?: RequestInit
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    ...options,
+    method: 'PATCH',
     body: JSON.stringify(data),
+  })
+}
+
+/**
+ * DELETE request helper
+ */
+export function del<T>(
+  endpoint: string,
+  options?: RequestInit
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    ...options,
+    method: 'DELETE',
   })
 }

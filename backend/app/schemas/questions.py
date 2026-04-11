@@ -86,3 +86,13 @@ class QuestionDBResponse(QuestionContent):
 
     class Config:
         from_attributes = True
+
+
+class QuestionEditRequest(BaseModel):
+    """Request to edit a question."""
+    question_text: Optional[str] = Field(None, description="The question text")
+    options: Optional[List[str]] = Field(None, description="Multiple choice options")
+    correct_answer: Optional[str] = Field(None, description="The correct answer")
+    explanation: Optional[str] = Field(None, description="Explanation of the answer")
+    difficulty: Optional[float] = Field(None, ge=0, le=1, description="Difficulty level (0-1)")
+    is_active: Optional[bool] = Field(None, description="Whether question is active")
