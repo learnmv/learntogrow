@@ -8,6 +8,10 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
+from sqlalchemy.orm import Session
+
+from app.models import GeoGebra
+
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
@@ -95,16 +99,29 @@ APPLET_COMMANDS = {
 }
 
 
-@lru_cache(maxsize=16)
-def get_applet_commands(applet_type: AppletType) -> str:
-    """Get available commands for a specific applet type (cached).
+def get_applet_commands(db: Session, applet_type: AppletType) -> str:
+    """Get available commands for a specific applet type from database.
 
     Args:
+        db: Database session
         applet_type: The GeoGebra applet type
 
     Returns:
         String listing available commands for that applet
     """
+    geogebra = db.query(GeoGebra).filter(GeoGebra.applet_type == applet_type.value).first()
+    if geogebra and geogebra.valid_command_template:
+        # Convert array to formatted string with dashes
+        return "\n".join(f"- {cmd}" for cmd in geogebra.valid_command_template)
+    # Fallback to empty string if not found
+    return ""
+
+
+# Deprecated: Kept for backward compatibility until all code is migrated
+# Use get_applet_commands(db, applet_type) instead
+@lru_cache(maxsize=16)
+def _get_applet_commands_cached(applet_type: AppletType) -> str:
+    """Cached version for non-DB contexts (deprecated)."""
     return APPLET_COMMANDS.get(applet_type.value, APPLET_COMMANDS[DEFAULT_APPLET_TYPE.value])
 
 
@@ -123,6 +140,7 @@ def _get_question_requirements(question_type: str) -> str:
 
 
 def format_prompt(
+    db: Session,
     question_type: str,
     grade_level: str,
     standard_code: str,
@@ -135,6 +153,7 @@ def format_prompt(
     """Format a prompt template with the given parameters.
 
     Args:
+        db: Database session
         question_type: Type of question (multiple_choice, open_ended, geogebra_diagram)
         grade_level: The grade level (e.g., "6", "7", "8")
         standard_code: Standard code (e.g., "6.EE.A.1")
@@ -154,7 +173,7 @@ def format_prompt(
     if requires_diagram and question_type in ["multiple_choice", "open_ended"]:
         template = load_prompt_template("geogebra_diagram")
         applet = applet_type or DEFAULT_APPLET_TYPE
-        applet_commands = get_applet_commands(applet)
+        applet_commands = get_applet_commands(db, applet)
 
         return template.format(
             question_type=formatted_question_type,
@@ -186,6 +205,7 @@ __all__ = [
     'DEFAULT_APPLET_TYPE',
     'load_prompt_template',
     'get_applet_commands',
+    '_get_applet_commands_cached',  # Deprecated
     'format_prompt',
-    'APPLET_COMMANDS',
+    'APPLET_COMMANDS',  # Deprecated
 ]

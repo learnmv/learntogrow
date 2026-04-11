@@ -134,6 +134,7 @@ class QuestionService:
 
         # Use the new format_prompt function that handles GeoGebra diagrams
         return format_prompt(
+            db=self.db,
             question_type=question_type,
             grade_level=str(grade_level),
             standard_code=standard.code,
