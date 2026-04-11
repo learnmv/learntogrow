@@ -81,12 +81,18 @@ function loadGeoGebraScript(): Promise<void> {
 function parseCommandArgs(command: string): { methodName: string; args: unknown[] } | null {
   const trimmed = command.trim()
 
-  // Handle API methods (camelCase with parentheses)
+  // Handle API methods (camelCase or PascalCase with parentheses)
   if (trimmed.startsWith('set') || trimmed.startsWith('Set')) {
     const match = trimmed.match(/^([^(]+)\((.*)\)$/)
     if (match) {
-      const methodName = match[1]
+      let methodName = match[1]
       const argsStr = match[2]
+
+      // Normalize to camelCase (GeoGebra API uses camelCase)
+      // Convert SetCoordSystem -> setCoordSystem
+      if (methodName.startsWith('Set') && methodName.length > 3) {
+        methodName = methodName[0].toLowerCase() + methodName.slice(1)
+      }
 
       // Parse arguments
       const args = argsStr.split(',').map(arg => {
