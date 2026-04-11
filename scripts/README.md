@@ -137,15 +137,31 @@ psql -U admin -d learntogrow_dev -c "SELECT standard_id, COUNT(*) FROM questions
 
 For standards that require GeoGebra diagrams, use the dedicated `generate_diagram_questions.py` script:
 
+### Files
+- `generate_diagram_questions.py` - Diagram question generation script
+- `run_diagram_generator.sh` - Wrapper script for easy execution
+
 ### Features
 - **Automatically filters** for standards with `requires_diagram = true`
 - **Fixed 1000 second timeout** for complex diagram generation
 - **Lower default parallelism** (3 instead of 6) due to longer processing time
 - **Logs applet type** for each generated question
 
-### Usage
+### Usage (Recommended - with wrapper)
 
-**Generate 50 diagram questions:**
+**Generate 50 diagram questions (default):**
+```bash
+export DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev"
+./scripts/run_diagram_generator.sh
+```
+
+**Generate 100 diagram questions:**
+```bash
+export DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev"
+./scripts/run_diagram_generator.sh 100 3
+```
+
+**Direct Python execution:**
 ```bash
 DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
   python generate_diagram_questions.py --parallel 3 --count 50
@@ -161,6 +177,61 @@ DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
 ```bash
 DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
   python generate_diagram_questions.py --parallel 3 --count 20 --difficulty 0.6
+```
+
+### Diagram Generation Cronjob
+
+**Run diagram generation every 2 hours:**
+```bash
+# Edit crontab
+crontab -e
+
+# Add line to run every 2 hours (generates 30 diagram questions)
+0 */2 * * * /home/sysadmin/learntogrow/scripts/run_diagram_generator.sh 30 3
+```
+
+**Systemd Timer for diagram generation:**
+
+Create `/etc/systemd/system/learntogrow-diagram-generator.service`:
+```ini
+[Unit]
+Description=LearnToGrow Diagram Question Generator
+After=network.target
+
+[Service]
+Type=oneshot
+User=sysadmin
+WorkingDirectory=/home/sysadmin/learntogrow
+ExecStart=/home/sysadmin/learntogrow/scripts/run_diagram_generator.sh 30 3
+Environment=DATABASE_URL=postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev
+Environment=API_BASE_URL=http://localhost:8000
+```
+
+Create `/etc/systemd/system/learntogrow-diagram-generator.timer`:
+```ini
+[Unit]
+Description=Run LearnToGrow diagram generator every hour
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable and start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable learntogrow-diagram-generator.timer
+sudo systemctl start learntogrow-diagram-generator.timer
+```
+
+### Log Files
+
+Diagram generation logs to separate file:
+```bash
+tail -f /var/log/learntogrow/diagram_generator.log
 ```
 
 ### Check Diagram Standards
