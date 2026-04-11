@@ -24,6 +24,12 @@ class QuestionGenerateRequest(BaseModel):
         None,
         description="Optional model override (defaults to OLLAMA_MODEL env var)"
     )
+    timeout: Optional[int] = Field(
+        None,
+        ge=30,
+        le=1000,
+        description="Optional timeout in seconds for Ollama request (default: 300)"
+    )
 
 
 class QuestionContent(BaseModel):

@@ -130,3 +130,45 @@ psql -U admin -d learntogrow_dev -c "SELECT COUNT(*) FROM questions;"
 # Questions by standard
 psql -U admin -d learntogrow_dev -c "SELECT standard_id, COUNT(*) FROM questions GROUP BY standard_id;"
 ```
+
+---
+
+## Diagram Question Generation Script
+
+For standards that require GeoGebra diagrams, use the dedicated `generate_diagram_questions.py` script:
+
+### Features
+- **Automatically filters** for standards with `requires_diagram = true`
+- **Fixed 1000 second timeout** for complex diagram generation
+- **Lower default parallelism** (3 instead of 6) due to longer processing time
+- **Logs applet type** for each generated question
+
+### Usage
+
+**Generate 50 diagram questions:**
+```bash
+DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
+  python generate_diagram_questions.py --parallel 3 --count 50
+```
+
+**Generate continuously:**
+```bash
+DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
+  python generate_diagram_questions.py --parallel 3 --infinite
+```
+
+**With specific difficulty:**
+```bash
+DATABASE_URL="postgresql://admin:admin@123@10.0.0.131:30432/learntogrow_dev" \
+  python generate_diagram_questions.py --parallel 3 --count 20 --difficulty 0.6
+```
+
+### Check Diagram Standards
+
+```bash
+# See which standards require diagrams
+psql -U admin -d learntogrow_dev -c "SELECT id, code, applet_type FROM standards WHERE requires_diagram = true;"
+
+# Count diagram questions
+psql -U admin -d learntogrow_dev -c "SELECT COUNT(*) FROM questions WHERE requires_diagram = true;"
+```

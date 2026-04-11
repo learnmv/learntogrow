@@ -35,7 +35,8 @@ def generate_question(
             difficulty=request.difficulty,
             question_type=request.question_type,
             custom_prompt=request.custom_prompt,
-            model=request.model
+            model=request.model,
+            timeout=request.timeout
         )
         return result
 

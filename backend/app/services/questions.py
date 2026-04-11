@@ -151,7 +151,8 @@ class QuestionService:
         difficulty: Optional[float] = None,
         question_type: str = "multiple_choice",
         custom_prompt: Optional[str] = None,
-        model: Optional[str] = None
+        model: Optional[str] = None,
+        timeout: Optional[int] = None
     ) -> Dict[str, Any]:
         """Generate a question using Ollama with validation and retry logic."""
 
@@ -195,10 +196,11 @@ class QuestionService:
                 }
 
                 # Call Ollama API
+                actual_timeout = timeout if timeout is not None else self.settings.OLLAMA_TIMEOUT
                 response = httpx.post(
                     self.ollama_url,
                     json=payload,
-                    timeout=self.settings.OLLAMA_TIMEOUT
+                    timeout=actual_timeout
                 )
                 response.raise_for_status()
 
@@ -264,7 +266,7 @@ class QuestionService:
                 raise ConnectionError(f"Could not connect to Ollama at {self.settings.OLLAMA_URL}. Is Ollama running?")
             except httpx.TimeoutException:
                 logger.error("Ollama request timed out")
-                raise TimeoutError(f"Ollama request timed out after {self.settings.OLLAMA_TIMEOUT} seconds")
+                raise TimeoutError(f"Ollama request timed out after {actual_timeout} seconds")
             except httpx.HTTPStatusError as e:
                 logger.error(f"Ollama HTTP error: {e.response.status_code} - {e.response.text}")
                 raise RuntimeError(f"Ollama error: {e.response.text}")
