@@ -2,12 +2,9 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
-  GraduationCap,
-  UserCircle,
   Shield,
   BookOpen,
   CheckSquare,
-  Clock,
   Link2,
   Loader2,
 } from 'lucide-react';
@@ -54,6 +51,26 @@ export function AdminDashboard() {
         <div className="text-center">
           <Loader2 className="w-8 h-8 text-sage-600 animate-spin mx-auto" />
           <p className="mt-4 text-text-muted">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="text-center max-w-md mx-auto px-4">
+          <div className="w-16 h-16 bg-coral-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Shield className="w-8 h-8 text-coral-600" />
+          </div>
+          <p className="text-coral-600 font-display text-lg mb-2">Error Loading Dashboard</p>
+          <p className="text-text-muted mb-4">{error}</p>
+          <button
+            onClick={loadStats}
+            className="px-6 py-2 bg-sage-600 text-white rounded-xl font-display font-medium hover:bg-sage-700 transition-colors"
+          >
+            Retry
+          </button>
         </div>
       </div>
     );
