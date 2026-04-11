@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, Refre
 import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
 import { cn, renderMathToHtml } from '../lib/utils'
+import { GraphingApplet } from './GraphingApplet'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -346,6 +347,18 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                 className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
+
+              {/* GeoGebra Applet - only for graphing questions */}
+              {currentQuestion.applet_type === 'graphing' && (
+                <div className="mb-6">
+                  <GraphingApplet
+                    commands={currentQuestion.geogebra_commands || undefined}
+                    config={currentQuestion.applet_config || undefined}
+                    height={400}
+                    width={600}
+                  />
+                </div>
+              )}
 
               {/* Options */}
               <div className="space-y-3">

@@ -1,9 +1,15 @@
 export type QuestionType = 'multiple_choice' | 'open_ended'
 
+export type AppletType = 'graphing' | 'geometry' | '3d' | 'classic' | 'cas' | 'scientific'
+
 interface QuestionContent {
   question_type: QuestionType
   options: string[] | null
   explanation: string | null
+  requires_diagram: boolean
+  applet_type: AppletType | null
+  geogebra_commands: string[] | null
+  applet_config: Record<string, unknown> | null
 }
 
 export interface GeneratedQuestion extends QuestionContent {
