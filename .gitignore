@@ -30,3 +30,6 @@ Thumbs.db
 # Kubernetes Secrets (create manually on server)
 k8s/overlays/*/secrets.yaml
 k8s/secrets.yaml
+
+# Claude Code
+.claude/
