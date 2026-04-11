@@ -113,6 +113,7 @@ export function GraphingApplet({
   config = {},
   height = 400,
   width = 600,
+  appletType = 'graphing',
 }: GraphingAppletProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const containerIdRef = useRef<string>(`ggb-applet-${Math.random().toString(36).substring(2, 9)}`)
@@ -144,7 +145,7 @@ export function GraphingApplet({
         // Default parameters for graphing applet
         const parameters: Record<string, unknown> = {
           id: containerId,
-          appName: 'graphing',
+          appName: appletType,
           width,
           height,
           showToolBar: false,

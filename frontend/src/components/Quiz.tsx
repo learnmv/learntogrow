@@ -348,12 +348,13 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
 
-              {/* GeoGebra Applet - only for graphing questions */}
-              {currentQuestion.applet_type === 'graphing' && (
+              {/* GeoGebra Applet - for graphing and geometry questions */}
+              {(currentQuestion.applet_type === 'graphing' || currentQuestion.applet_type === 'geometry') && (
                 <div className="mb-6">
                   <GraphingApplet
                     commands={currentQuestion.geogebra_commands || undefined}
                     config={currentQuestion.applet_config || undefined}
+                    appletType={currentQuestion.applet_type}
                     height={400}
                     width={600}
                   />
