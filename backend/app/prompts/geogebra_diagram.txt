@@ -21,29 +21,12 @@ Requirements:
 GEOGEBRA COMMANDS (REQUIRED):
 Generate GeoGebra commands to create an appropriate diagram for this question.
 
-Available commands for {applet_type} applet:
+Use only from Available commands for {applet_type} applet:
 {applet_commands}
 
 Command Guidelines:
-- You MUST provide at least 3-8 commands to create a visible diagram
+- You MUST provide commands to create a visible diagram
 - Create objects in logical order (points first, then shapes)
-- Use descriptive names (e.g., "vertexA", "triangleABC")
-- Set appropriate colors for clarity (red=255,0,0, blue=0,128,255, green=0,200,0)
-- Use SetFixed() for objects students should not move
-- Use SetVisible() to hide construction elements if needed
-- Use SetCoordSystem() to set appropriate viewing area
-- Use SetAxesVisible() and SetGridVisible() for clarity
-
-EXAMPLE OF GOOD COMMANDS:
-[
-    "A = (1, 2)",
-    "B = (4, 2)",
-    "C = (2, 5)",
-    "Triangle(A, B, C)",
-    "SetCoordSystem(-1, 6, -1, 6)",
-    "SetAxesVisible(true, true)",
-    "SetGridVisible(true)"
-]
 
 DO NOT leave geogebra_commands empty. The diagram is REQUIRED for this question.
 
@@ -61,8 +44,8 @@ IMPORTANT: Respond with ONLY the raw JSON object. Do NOT wrap in markdown code b
         "command5"
     ],
     "applet_config": {{
-        "width": 800,
-        "height": 500,
+        "width": 1000,
+        "height": 1000.
         "showToolBar": false,
         "showAlgebraInput": false,
         "showMenuBar": false,
