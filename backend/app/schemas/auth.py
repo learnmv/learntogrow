@@ -47,9 +47,12 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
 
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     """User response schema."""
     id: int
+    username: str
+    email: str
+    full_name: Optional[str] = None
     role: str
     is_active: bool
     created_at: datetime
