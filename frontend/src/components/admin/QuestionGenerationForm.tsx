@@ -156,11 +156,11 @@ export function QuestionGenerationForm({ onSuccess }: QuestionGenerationFormProp
 
     const request: QuestionGenerateRequest = {
       subject_id: selectedSubject as number,
-      grade_id: selectedGrade as number || undefined,
+      grade_id: selectedGrade ? Number(selectedGrade) : undefined,
       domain_ids: selectedDomains.length > 0 ? selectedDomains : undefined,
       standard_ids: selectedStandards.length > 0 ? selectedStandards : undefined,
-      difficulty_min: difficultyMin !== '' ? difficultyMin : undefined,
-      difficulty_max: difficultyMax !== '' ? difficultyMax : undefined,
+      difficulty_min: difficultyMin !== '' ? Number(difficultyMin) : undefined,
+      difficulty_max: difficultyMax !== '' ? Number(difficultyMax) : undefined,
       questions_per_standard: questionsPerStandard,
       question_type: questionType,
       timeout,

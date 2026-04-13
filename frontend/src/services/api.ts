@@ -22,7 +22,16 @@ export async function fetchApi<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({})) as ApiError
-    throw new Error(error.detail || `HTTP ${response.status}: ${response.statusText}`)
+    // FastAPI validation errors return detail as array of objects
+    let detail: string
+    if (Array.isArray(error.detail)) {
+      detail = error.detail.map((e: any) => e.msg || String(e)).join('; ')
+    } else if (typeof error.detail === 'string') {
+      detail = error.detail
+    } else {
+      detail = `HTTP ${response.status}: ${response.statusText}`
+    }
+    throw new Error(detail)
   }
 
   return response.json() as Promise<T>
