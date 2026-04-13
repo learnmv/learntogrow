@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Standard, Question
+from app.models import Standard, Question, AnsweredQuestion
 from app.prompts import format_prompt, AppletType
 
 logger = logging.getLogger(__name__)
@@ -103,13 +103,25 @@ class QuestionService:
     def get_questions_by_standard(
         self,
         standard_id: int,
-        limit: Optional[int] = None
+        limit: Optional[int] = None,
+        student_id: Optional[int] = None
     ) -> List[Question]:
-        """Fetch active questions for a specific standard."""
+        """Fetch active questions for a specific standard.
+
+        If student_id is provided, exclude questions the student has already answered.
+        """
         query = self.db.query(Question).filter(
             Question.standard_id == standard_id,
             Question.is_active == True
         )
+
+        # Exclude already-answered questions for this student
+        if student_id is not None:
+            answered_ids = self.db.query(AnsweredQuestion.question_id).filter(
+                AnsweredQuestion.student_id == student_id
+            ).subquery()
+            query = query.filter(Question.id.notin_(answered_ids))
+
         if limit:
             query = query.limit(limit)
         return query.all()

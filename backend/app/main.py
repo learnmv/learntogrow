@@ -12,6 +12,7 @@ from app.routers import (
     auth_router,
     parent_router,
     admin_router,
+    student_router,
 )
 
 logging.basicConfig(
@@ -44,6 +45,7 @@ app.include_router(questions_router, prefix="/api/v1")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(parent_router, prefix="/api/v1")
 app.include_router(admin_router, prefix="/api/v1")
+app.include_router(student_router, prefix="/api/v1")
 
 
 @app.get("/health")

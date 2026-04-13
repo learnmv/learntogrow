@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Enum, Text
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, ForeignKey, Enum, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -130,3 +130,27 @@ class QuizAttempt(Base):
 
     def __repr__(self):
         return f"<QuizAttempt(student_id={self.student_id}, standard_id={self.standard_id}, score={self.score})>"
+
+
+class AnsweredQuestion(Base):
+    """Tracks individual question answers to avoid repeating questions for students."""
+    __tablename__ = "answered_questions"
+    __table_args__ = (
+        UniqueConstraint('student_id', 'question_id', name='uq_student_question'),
+    )
+
+    id = Column(Integer, primary_key=True)
+    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False)
+    standard_id = Column(Integer, ForeignKey("standards.id", ondelete="CASCADE"), nullable=False)
+    selected_answer = Column(Text)
+    is_correct = Column(Boolean, nullable=False)
+    answered_at = Column(TIMESTAMP, server_default=func.now())
+
+    # Relationships
+    student = relationship("User", backref="answered_questions")
+    question = relationship("Question", backref="answered_questions")
+    standard = relationship("Standard", backref="answered_questions")
+
+    def __repr__(self):
+        return f"<AnsweredQuestion(student_id={self.student_id}, question_id={self.question_id}, is_correct={self.is_correct})>"

@@ -7,6 +7,7 @@ from .questions import router as questions_router
 from .auth import router as auth_router
 from .parent import router as parent_router
 from .admin import router as admin_router
+from .student import router as student_router
 
 __all__ = [
     "subjects_router",
@@ -18,4 +19,5 @@ __all__ = [
     "auth_router",
     "parent_router",
     "admin_router",
+    "student_router",
 ]
