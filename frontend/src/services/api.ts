@@ -10,12 +10,13 @@ export async function fetchApi<T>(
 ): Promise<T> {
   const url = `${getApiUrl()}${endpoint}`
 
+  const { headers: optionHeaders, ...restOptions } = options ?? {}
   const config: RequestInit = {
+    ...restOptions,
     headers: {
       'Content-Type': 'application/json',
-      ...options?.headers,
+      ...optionHeaders,
     },
-    ...options,
   }
 
   const response = await fetch(url, config)
