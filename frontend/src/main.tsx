@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
+import { Toaster } from 'sonner'
 import './index.css'
 import App from './App.tsx'
 import { loadConfig, isDebugEnabled } from './lib/config.ts'
@@ -30,6 +31,7 @@ async function init() {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
+          <Toaster position="top-right" richColors />
           <BrowserRouter>
             <App />
             {isDebugEnabled() && <ReactQueryDevtools initialIsOpen={false} />}

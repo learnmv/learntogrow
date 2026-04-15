@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Play, CheckCircle, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 import { generateQuestions } from '../../services/admin';
 import { fetchSubjects } from '../../services/standards';
 import { fetchGradesBySubject } from '../../services/standards';
@@ -183,13 +184,24 @@ export function QuestionGenerationForm({ onSuccess }: QuestionGenerationFormProp
         },
       });
 
-      if (response.questions_created > 0 && onSuccess) {
-        onSuccess();
+      if (response.questions_created > 0) {
+        toast.success(`Generated ${response.questions_created} question(s)`, {
+          description: `${response.standards_completed} standard(s) completed`,
+        });
+        if (onSuccess) onSuccess();
+      } else {
+        toast.error('No questions generated', {
+          description: response.message || 'No matching standards found',
+        });
       }
     } catch (err: any) {
+      const message = err.message || 'Failed to generate questions';
       setResult({
         success: false,
-        message: err.message || 'Failed to generate questions',
+        message,
+      });
+      toast.error('Failed to generate questions', {
+        description: message,
       });
     } finally {
       setLoading(false);
