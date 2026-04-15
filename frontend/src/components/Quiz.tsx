@@ -3,6 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
+import { recordAnswer } from '../services/student'
+import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
 import { GraphingApplet } from './graphing'
 import { GeometryApplet } from './geometry'
@@ -30,6 +32,7 @@ interface SavedProgress {
 }
 
 export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
+  const { isAuthenticated } = useAuth()
   const [standards, setStandards] = useState<Standard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
   const [currentQuestion, setCurrentQuestion] = useState<QuestionFromDB | null>(null)
@@ -173,7 +176,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     await loadQuestion(true)
   }
 
-  const handleAnswerSelect = (value: string) => {
+  const handleAnswerSelect = async (value: string) => {
     setSelectedAnswer(value)
     setShowResult(true)
     // Save answer to state and storage
@@ -182,6 +185,20 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
       ...prev,
       [currentIndex]: { selected: value, correct: isCorrect }
     }))
+
+    // Record answer to backend if authenticated
+    if (isAuthenticated && currentQuestion) {
+      try {
+        await recordAnswer({
+          question_id: currentQuestion.id,
+          selected_answer: value,
+          is_correct: isCorrect,
+        })
+      } catch (err) {
+        // Log error but don't disrupt the quiz experience
+        console.error('Failed to record answer:', err)
+      }
+    }
   }
 
   const handleExit = () => {
