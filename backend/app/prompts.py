@@ -1,6 +1,6 @@
 """
 Prompt templates for question generation.
-Text files in prompts/ are the source of truth; this module provides programmatic access.
+Database is the source of truth; this module falls back to text files in prompts/ if DB entry missing.
 """
 
 from enum import Enum
@@ -10,7 +10,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from app.models import GeoGebra
+from app.models import GeoGebra, QuestionPrompt
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -29,9 +29,34 @@ class AppletType(str, Enum):
 DEFAULT_APPLET_TYPE = AppletType.GRAPHING
 
 
+def load_prompt_template(db: Session, question_type: str) -> str:
+    """Load prompt template from database, fallback to file.
+
+    Args:
+        db: Database session
+        question_type: The type of question (multiple_choice, open_ended, geogebra_diagram, etc.)
+
+    Returns:
+        The prompt template string
+    """
+    # Try database first
+    prompt = db.query(QuestionPrompt).filter(QuestionPrompt.name == question_type).first()
+    if prompt:
+        return prompt.content
+
+    # Fallback to file
+    template_file = PROMPTS_DIR / f"{question_type}.txt"
+    if not template_file.exists():
+        template_file = PROMPTS_DIR / "open_ended.txt"
+    return template_file.read_text()
+
+
+# Keep cached version for backward compatibility with non-db contexts
 @lru_cache(maxsize=10)
-def load_prompt_template(question_type: str) -> str:
-    """Load prompt template from text file (cached).
+def load_prompt_template_cached(question_type: str) -> str:
+    """Load prompt template from text file (cached, no database).
+
+    Used as fallback when database is not available.
 
     Args:
         question_type: The type of question (multiple_choice, open_ended, geogebra_diagram, etc.)
@@ -171,7 +196,7 @@ def format_prompt(
 
     # If requires_diagram, use the geogebra_diagram template
     if requires_diagram and question_type in ["multiple_choice", "open_ended"]:
-        template = load_prompt_template("geogebra_diagram")
+        template = load_prompt_template(db, "geogebra_diagram")
         applet = applet_type or DEFAULT_APPLET_TYPE
         applet_commands = get_applet_commands(db, applet)
 
@@ -189,7 +214,7 @@ def format_prompt(
         )
 
     # Standard template for non-diagram questions
-    template = load_prompt_template(question_type)
+    template = load_prompt_template(db, question_type)
     return template.format(
         question_type=formatted_question_type,
         grade_level=grade_level,
@@ -204,6 +229,7 @@ __all__ = [
     'AppletType',
     'DEFAULT_APPLET_TYPE',
     'load_prompt_template',
+    'load_prompt_template_cached',
     'get_applet_commands',
     '_get_applet_commands_cached',  # Deprecated
     'format_prompt',

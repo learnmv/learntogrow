@@ -4,6 +4,7 @@ import {
   Users,
   Shield,
   BookOpen,
+  FileText,
   CheckSquare,
   Link2,
   Loader2,
@@ -12,9 +13,10 @@ import { getDashboardStats } from '../../services/admin';
 import { QuestionGenerationForm } from './QuestionGenerationForm';
 import { UserManagement } from './UserManagement';
 import { PendingLinks } from './PendingLinks';
+import { PromptEditor } from './PromptEditor';
 import type { AdminDashboardStats } from '../../types/admin';
 
-type Tab = 'overview' | 'generate' | 'users' | 'links';
+type Tab = 'overview' | 'generate' | 'prompts' | 'users' | 'links';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -41,6 +43,7 @@ export function AdminDashboard() {
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: Shield },
     { id: 'generate' as Tab, label: 'Generate Questions', icon: BookOpen },
+    { id: 'prompts' as Tab, label: 'Prompts', icon: FileText },
     { id: 'users' as Tab, label: 'User Management', icon: Users },
     { id: 'links' as Tab, label: 'Pending Links', icon: Link2 },
   ];
@@ -164,6 +167,15 @@ export function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
             >
               <QuestionGenerationForm onSuccess={loadStats} />
+            </motion.div>
+          )}
+
+          {activeTab === 'prompts' && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <PromptEditor />
             </motion.div>
           )}
 
