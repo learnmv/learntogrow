@@ -7,36 +7,30 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  BACKEND_IMAGE: ghcr.io/learnmv/learntogrow-backend:stable
-  FRONTEND_IMAGE: ghcr.io/learnmv/learntogrow-frontend:stable
+  IMAGE_PREFIX: ghcr.io/learnmv/learntogrow
 
 jobs:
-  version:
-    runs-on: self-hosted
-    outputs:
-      version: ${{ steps.get_version.outputs.version }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Get version
-        id: get_version
-        run: |
-          VERSION=$(date +'%Y.%m.%d')-${GITHUB_SHA::7}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
-
   build-backend:
-    needs: version
     runs-on: self-hosted
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="prod-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "backend_stable=${{ env.IMAGE_PREFIX }}-backend:stable" >> $GITHUB_OUTPUT
+          echo "Building with tag: ${IMAGE_TAG}"
 
       - name: Configure Docker daemon
         run: |
@@ -51,31 +45,41 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build backend images
+      - name: Build backend image
         run: |
-          docker build --compress -t ${{ env.BACKEND_IMAGE }} ./backend
-          docker tag ${{ env.BACKEND_IMAGE }} ghcr.io/learnmv/learntogrow-backend:v${{ needs.version.outputs.version }}
+          docker build --compress -t ${{ steps.vars.outputs.backend_image }} ./backend
+          docker tag ${{ steps.vars.outputs.backend_image }} ${{ steps.vars.outputs.backend_stable }}
 
-      - name: Push backend images with retry
+      - name: Push backend image with retry
         run: |
-          for image in "${{ env.BACKEND_IMAGE }}" "ghcr.io/learnmv/learntogrow-backend:v${{ needs.version.outputs.version }}"; do
-            for i in 1 2 3; do
-              echo "Pushing $image (attempt $i)..."
-              docker push "$image" && break
-              echo "Push failed, waiting 10s before retry..."
-              sleep 10
-            done
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            docker push ${{ steps.vars.outputs.backend_image }} && docker push ${{ steps.vars.outputs.backend_stable }} && break
+            echo "Push failed, waiting 10s before retry..."
+            sleep 10
           done
 
   build-frontend:
-    needs: version
     runs-on: self-hosted
     permissions:
       contents: read
       packages: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="prod-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
+          echo "frontend_stable=${{ env.IMAGE_PREFIX }}-frontend:stable" >> $GITHUB_OUTPUT
+          echo "Building with tag: ${IMAGE_TAG}"
 
       - name: Login to GHCR
         uses: docker/login-action@v3
@@ -84,24 +88,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build frontend images
+      - name: Build frontend image
         run: |
-          docker build --compress -t ${{ env.FRONTEND_IMAGE }} ./frontend
-          docker tag ${{ env.FRONTEND_IMAGE }} ghcr.io/learnmv/learntogrow-frontend:v${{ needs.version.outputs.version }}
+          docker build --compress -t ${{ steps.vars.outputs.frontend_image }} ./frontend
+          docker tag ${{ steps.vars.outputs.frontend_image }} ${{ steps.vars.outputs.frontend_stable }}
 
-      - name: Push frontend images with retry
+      - name: Push frontend image with retry
         run: |
-          for image in "${{ env.FRONTEND_IMAGE }}" "ghcr.io/learnmv/learntogrow-frontend:v${{ needs.version.outputs.version }}"; do
-            for i in 1 2 3; do
-              echo "Pushing $image (attempt $i)..."
-              docker push "$image" && break
-              echo "Push failed, waiting 10s before retry..."
-              sleep 10
-            done
+          for i in 1 2 3; do
+            echo "Attempt $i..."
+            docker push ${{ steps.vars.outputs.frontend_image }} && docker push ${{ steps.vars.outputs.frontend_stable }} && break
+            echo "Push failed, waiting 10s before retry..."
+            sleep 10
           done
 
   deploy:
-    needs: [version, build-backend, build-frontend]
+    needs: [build-backend, build-frontend]
     runs-on: self-hosted
     permissions:
       contents: write
@@ -109,14 +111,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set variables
+        id: vars
+        run: |
+          TIMESTAMP=$(date +%Y%m%d)
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          IMAGE_TAG="prod-${TIMESTAMP}-${SHORT_SHA}"
+          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
       - name: Setup kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
 
-      - name: Deploy to Kubernetes (Production)
+      - name: Update image tags and deploy
         run: |
-          kubectl apply -k k8s/overlays/prod/
+          cd k8s/overlays/prod
+          # Update image tags in kustomization (using sed since kustomize CLI not installed)
+          sed -i "s/newTag: stable/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
+          cat kustomization.yaml
+          # Deploy
+          kubectl apply -k .
 
       - name: Wait for rollout
         run: |
@@ -126,6 +141,7 @@ jobs:
       - name: Verify deployment
         run: |
           echo "=== Production Deployment ==="
+          kubectl get pods -n learntogrow-prod -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.containers[0].image}{"\n"}{end}'
           kubectl get pods -n learntogrow-prod
           kubectl get svc -n learntogrow-prod
 
@@ -134,15 +150,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: v${{ needs.version.outputs.version }}
-          release_name: Release v${{ needs.version.outputs.version }}
+          tag_name: v${{ steps.vars.outputs.image_tag }}
+          release_name: Release v${{ steps.vars.outputs.image_tag }}
           body: |
             Production deployment completed successfully.
 
             **Images pushed to GHCR:**
-            - Backend: `${{ env.BACKEND_IMAGE }}`
-            - Frontend: `${{ env.FRONTEND_IMAGE }}`
-            - Versioned images also tagged with `v${{ needs.version.outputs.version }}`
+            - Backend: `${{ env.IMAGE_PREFIX }}-backend:${{ steps.vars.outputs.image_tag }}`
+            - Frontend: `${{ env.IMAGE_PREFIX }}-frontend:${{ steps.vars.outputs.image_tag }}`
           draft: false
           prerelease: false
 
@@ -157,7 +172,7 @@ jobs:
         with:
           package-name: learntogrow-backend
           package-type: container
-          min-versions-to-keep: 2
+          min-versions-to-keep: 3
           delete-only-untagged-versions: true
 
       - name: Cleanup old frontend images
@@ -165,5 +180,5 @@ jobs:
         with:
           package-name: learntogrow-frontend
           package-type: container
-          min-versions-to-keep: 2
+          min-versions-to-keep: 3
           delete-only-untagged-versions: true
