@@ -125,7 +125,7 @@ def record_answer(
         selected_answer=selected_answer,
         is_correct=is_correct,
     ).on_conflict_do_nothing(
-        constraint='uq_student_question'
+        constraint='answered_questions_student_id_question_id_key'
     )
     db.execute(stmt)
     db.commit()
