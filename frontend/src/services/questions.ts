@@ -1,4 +1,5 @@
 import { get, post } from './api'
+import { getAuthHeaders } from './auth'
 import type { GeneratedQuestion, QuestionGenerationRequest, QuestionFromDB } from '../types/questions'
 
 /**
@@ -15,5 +16,7 @@ export async function fetchQuestionsByStandard(
   limit?: number
 ): Promise<QuestionFromDB[]> {
   const params = limit ? `?limit=${limit}` : ''
-  return get<QuestionFromDB[]>(`/questions/standard/${standardId}${params}`)
+  return get<QuestionFromDB[]>(`/questions/standard/${standardId}${params}`, {
+    headers: getAuthHeaders()
+  })
 }
