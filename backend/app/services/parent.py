@@ -1,9 +1,9 @@
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
+from sqlalchemy import func, Integer
 
-from app.models import User, UserRole, ParentStudentLink, LinkStatus, QuizAttempt, Standard
+from app.models import User, UserRole, ParentStudentLink, LinkStatus, AnsweredQuestion, Standard
 from app.schemas.parent import ParentStudentLinkResponse, StudentProgressSummary, StudentDetailForParent
 
 
@@ -153,7 +153,7 @@ class ParentService:
         return True
 
     def get_student_progress_summary(self, student_id: int) -> StudentProgressSummary:
-        """Get progress summary for a student."""
+        """Get progress summary for a student using answered_questions."""
         student = self.db.query(User).filter(
             User.id == student_id,
             User.role == UserRole.STUDENT
@@ -162,54 +162,54 @@ class ParentService:
         if not student:
             raise ValueError("Student not found")
 
-        # Get total attempts
-        total_attempts = self.db.query(func.count(QuizAttempt.id)).filter(
-            QuizAttempt.student_id == student_id
-        ).scalar()
+        # Get total answers and correct count
+        total_result = self.db.query(
+            func.count(AnsweredQuestion.id).label("total"),
+            func.sum(func.cast(AnsweredQuestion.is_correct, Integer)).label("correct")
+        ).filter(AnsweredQuestion.student_id == student_id).first()
 
-        # Get average score
-        avg_score = self.db.query(func.avg(QuizAttempt.score)).filter(
-            QuizAttempt.student_id == student_id
-        ).scalar()
+        total_answered = total_result.total or 0
+        correct_count = total_result.correct or 0 if total_result.total else 0
+        accuracy = correct_count / total_answered if total_answered > 0 else None
 
-        # Get last attempt
-        last_attempt = self.db.query(QuizAttempt).filter(
-            QuizAttempt.student_id == student_id
+        # Get last answer
+        last_answer = self.db.query(AnsweredQuestion).filter(
+            AnsweredQuestion.student_id == student_id
         ).order_by(
-            QuizAttempt.completed_at.desc()
+            AnsweredQuestion.answered_at.desc()
         ).first()
 
-        # Get recent attempts
-        recent_attempts = self.db.query(QuizAttempt).filter(
-            QuizAttempt.student_id == student_id
+        # Get recent answers with standard info
+        recent_answers = self.db.query(AnsweredQuestion).filter(
+            AnsweredQuestion.student_id == student_id
         ).options(
-            joinedload(QuizAttempt.standard)
+            joinedload(AnsweredQuestion.standard)
         ).order_by(
-            QuizAttempt.completed_at.desc()
+            AnsweredQuestion.answered_at.desc()
         ).limit(10).all()
 
         recent_list = []
-        for attempt in recent_attempts:
+        for answer in recent_answers:
             recent_list.append({
-                "attempt_id": attempt.id,
-                "standard_code": attempt.standard.code if attempt.standard else None,
-                "score": attempt.score,
-                "total_questions": attempt.total_questions,
-                "completed_at": attempt.completed_at.isoformat() if attempt.completed_at else None
+                "answer_id": answer.id,
+                "question_id": answer.question_id,
+                "standard_code": answer.standard.code if answer.standard else None,
+                "is_correct": answer.is_correct,
+                "answered_at": answer.answered_at.isoformat() if answer.answered_at else None
             })
 
         # Get unique standards attempted
-        standards_attempted = self.db.query(func.count(func.distinct(QuizAttempt.standard_id))).filter(
-            QuizAttempt.student_id == student_id
+        standards_attempted = self.db.query(func.count(func.distinct(AnsweredQuestion.standard_id))).filter(
+            AnsweredQuestion.student_id == student_id
         ).scalar()
 
         return StudentProgressSummary(
             student_id=student_id,
             student_name=student.full_name or student.username,
             student_username=student.username,
-            total_attempts=total_attempts,
-            average_score=round(avg_score, 2) if avg_score else None,
-            last_attempt_at=last_attempt.completed_at if last_attempt else None,
+            total_attempts=total_answered,
+            average_score=round(accuracy * 100, 2) if accuracy else None,
+            last_attempt_at=last_answer.answered_at if last_answer else None,
             recent_attempts=recent_list
         )
 
@@ -227,25 +227,24 @@ class ParentService:
 
         summary = self.get_student_progress_summary(student_id)
 
-        # Get more detailed recent attempts with standard info
-        recent_attempts = self.db.query(QuizAttempt).filter(
-            QuizAttempt.student_id == student_id
+        # Get more detailed recent answers with standard info
+        recent_answers = self.db.query(AnsweredQuestion).filter(
+            AnsweredQuestion.student_id == student_id
         ).options(
-            joinedload(QuizAttempt.standard)
+            joinedload(AnsweredQuestion.standard)
         ).order_by(
-            QuizAttempt.completed_at.desc()
+            AnsweredQuestion.answered_at.desc()
         ).limit(20).all()
 
         detailed_attempts = []
-        for attempt in recent_attempts:
+        for answer in recent_answers:
             detailed_attempts.append({
-                "attempt_id": attempt.id,
-                "standard_code": attempt.standard.code if attempt.standard else None,
-                "standard_description": attempt.standard.description if attempt.standard else None,
-                "score": attempt.score,
-                "total_questions": attempt.total_questions,
-                "time_spent_seconds": attempt.time_spent_seconds,
-                "completed_at": attempt.completed_at.isoformat() if attempt.completed_at else None
+                "answer_id": answer.id,
+                "question_id": answer.question_id,
+                "standard_code": answer.standard.code if answer.standard else None,
+                "standard_description": answer.standard.description if answer.standard else None,
+                "is_correct": answer.is_correct,
+                "answered_at": answer.answered_at.isoformat() if answer.answered_at else None
             })
 
         student = self.db.query(User).filter(User.id == student_id).first()
@@ -257,7 +256,7 @@ class ParentService:
             email=student.email,
             total_attempts=summary.total_attempts,
             average_score=summary.average_score,
-            standards_attempted=len(set(a.standard_id for a in recent_attempts)),
+            standards_attempted=len(set(a.standard_id for a in recent_answers)),
             recent_attempts=detailed_attempts
         )
 

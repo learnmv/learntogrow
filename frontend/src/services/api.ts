@@ -87,3 +87,18 @@ export function del<T>(
     method: 'DELETE',
   })
 }
+
+/**
+ * PUT request helper
+ */
+export function put<T>(
+  endpoint: string,
+  data: unknown,
+  options?: RequestInit
+): Promise<T> {
+  return fetchApi<T>(endpoint, {
+    ...options,
+    method: 'PUT',
+    body: JSON.stringify(data),
+  })
+}

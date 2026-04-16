@@ -39,6 +39,15 @@ Recently added authentication system with three roles:
 
 Passwords hashed with PBKDF2, JWT tokens for authentication.
 
+### Student Question Tracking
+
+Students who are logged in have their answers tracked in the `answered_questions` table. This enables:
+- Progress tracking (questions answered, accuracy, standards attempted)
+- Question exclusion (students don't see questions they've already answered)
+- History viewing in the student dashboard
+
+The frontend sends auth headers when fetching questions (`getAuthHeaders()`), and the backend excludes answered questions from the response.
+
 **Test Accounts:**
 
 | Username | Password | Role | Notes |
@@ -86,6 +95,7 @@ The PostgreSQL schema is defined in `schema.sql` at the repository root. Tables:
 Migrations in `backend/app/migrations/`:
 - `001_add_user_system.sql` - Creates user tables
 - `002_seed_admin_user.sql` - Seed admin account
+- `003_add_answered_questions.sql` - Tracks student answers for question exclusion
 
 ### Scripts
 
@@ -100,14 +110,46 @@ python scripts/create_admin.py
 ## CI/CD
 
 GitHub Actions workflows use a self-hosted runner:
-- **Dev** (`.github/workflows/dev.yml`): Builds images on push to `dev` branch, saves to `/home/sysadmin/dev-builds/`
-- **Prod** (`.github/workflows/prod.yml`): Builds images on push to `main`, saves to `/home/sysadmin/prod-builds/`, creates GitHub release
+- **Dev** (`.github/workflows/dev.yml`): Builds images on push to `dev` branch with versioned tags (`dev-{TIMESTAMP}-{SHA}`)
+- **Prod** (`.github/workflows/prod.yml`): Builds images on push to `main` with versioned tags (`prod-{TIMESTAMP}-{SHA}`), creates GitHub release
+
+Both workflows use versioned image tags to trigger Kubernetes rollouts. The `:dev` and `:stable` tags are kept as aliases for easy rollback.
 
 Kubernetes manifests in `k8s/`:
-- Deployments use `imagePullPolicy: Never` for local images
+- Deployments use `imagePullPolicy: Always`
 - Requires `k8s/secrets.yaml` (gitignored) for database credentials
 - Ingress configured for `learntogrow.local`
 - Dev namespace: `learntogrow-dev`, Prod: `learntogrow-prod`
+
+### Viewing Logs with kubectl
+
+```bash
+# Dev environment logs
+kubectl logs deployment/backend -n learntogrow-dev --tail=100
+kubectl logs deployment/frontend -n learntogrow-dev --tail=100
+
+# Prod environment logs
+kubectl logs deployment/backend -n learntogrow-prod --tail=100
+kubectl logs deployment/frontend -n learntogrow-prod --tail=100
+
+# Follow logs in real-time
+kubectl logs -f deployment/backend -n learntogrow-dev
+
+# Check pod status
+kubectl get pods -n learntogrow-dev
+kubectl get pods -n learntogrow-prod
+```
+
+### Database Access
+
+PostgreSQL runs in the `default` namespace:
+```bash
+# Connect to dev database
+kubectl exec postgres-69d98cd59d-hl42n -n default -- psql -U admin -d learntogrow_dev
+
+# Connect to prod database
+kubectl exec postgres-69d98cd59d-hl42n -n default -- psql -U admin -d learntogrow_prod
+```
 
 ## Important File Locations
 

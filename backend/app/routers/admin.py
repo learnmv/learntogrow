@@ -302,3 +302,132 @@ def generate_questions_admin(
         "questions_created": results["questions_created"],
         "errors": results["errors"] if results["errors"] else None
     }
+
+
+# ==================== Prompt Management ====================
+
+@router.get("/prompts")
+def get_prompts(
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get all prompt templates."""
+    from app.models import QuestionPrompt
+    from app.schemas.prompt import PromptResponse
+
+    prompts = db.query(QuestionPrompt).order_by(QuestionPrompt.name).all()
+    return [PromptResponse.model_validate(p) for p in prompts]
+
+
+@router.get("/prompts/{name}")
+def get_prompt(
+    name: str,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get a specific prompt template by name."""
+    from app.models import QuestionPrompt
+    from app.schemas.prompt import PromptResponse
+
+    prompt = db.query(QuestionPrompt).filter(QuestionPrompt.name == name).first()
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Prompt '{name}' not found"
+        )
+    return PromptResponse.model_validate(prompt)
+
+
+@router.put("/prompts/{name}")
+def update_prompt(
+    name: str,
+    updates: dict,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Update a prompt template."""
+    from app.models import QuestionPrompt
+    from app.schemas.prompt import PromptResponse, PromptUpdate
+
+    # Validate input
+    validated = PromptUpdate(**updates)
+
+    prompt = db.query(QuestionPrompt).filter(QuestionPrompt.name == name).first()
+    if not prompt:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Prompt '{name}' not found"
+        )
+
+    # Update fields
+    prompt.content = validated.content
+    if validated.description is not None:
+        prompt.description = validated.description
+
+    db.commit()
+    db.refresh(prompt)
+    return PromptResponse.model_validate(prompt)
+
+
+@router.get("/prompt-placeholders")
+def get_prompt_placeholders(
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get available placeholders for prompt templates."""
+    from app.schemas.prompt import PromptPlaceholdersResponse, PromptPlaceholder
+
+    placeholders = [
+        PromptPlaceholder(
+            placeholder="{question_type}",
+            description="Question type (e.g., 'multiple choice', 'open ended')",
+            example="multiple choice"
+        ),
+        PromptPlaceholder(
+            placeholder="{grade_level}",
+            description="Grade level number",
+            example="6"
+        ),
+        PromptPlaceholder(
+            placeholder="{standard_code}",
+            description="Standard code identifier",
+            example="6.EE.A.1"
+        ),
+        PromptPlaceholder(
+            placeholder="{standard_description}",
+            description="Full description of the standard",
+            example="Write and evaluate numerical expressions involving whole-number exponents"
+        ),
+        PromptPlaceholder(
+            placeholder="{difficulty:.1f}",
+            description="Difficulty level from 0.0 to 1.0",
+            example="0.7"
+        ),
+        PromptPlaceholder(
+            placeholder="{keywords}",
+            description="Comma-separated key concepts",
+            example="expressions, exponents, evaluation"
+        ),
+        PromptPlaceholder(
+            placeholder="{applet_type}",
+            description="GeoGebra applet type (only for diagram questions)",
+            example="graphing"
+        ),
+        PromptPlaceholder(
+            placeholder="{applet_commands}",
+            description="Available GeoGebra commands (only for diagram questions)",
+            example="- Points: A = (1, 2)\\n- Lines: Line(A, B)"
+        ),
+        PromptPlaceholder(
+            placeholder="{question_specific_requirements}",
+            description="Additional requirements based on question type",
+            example="Provide exactly 4 multiple choice options..."
+        ),
+        PromptPlaceholder(
+            placeholder="{answer_field}",
+            description="JSON field for answer based on question type",
+            example='"answer": "the correct answer",'
+        ),
+    ]
+
+    return PromptPlaceholdersResponse(placeholders=placeholders)

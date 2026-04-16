@@ -22,13 +22,12 @@ export interface StudentDetailForParent {
 }
 
 export interface DetailedAttempt {
-  attempt_id: number
+  answer_id: number
+  question_id: number
   standard_code: string | null
   standard_description: string | null
-  score: number
-  total_questions: number
-  time_spent_seconds: number | null
-  completed_at: string | null
+  is_correct: boolean
+  answered_at: string | null
 }
 
 export interface LinkRequestData {

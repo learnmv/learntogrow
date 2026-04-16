@@ -2,27 +2,14 @@ import { useState, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft, GraduationCap, BarChart3, BookOpen, Target, Loader2,
-  AlertCircle, Clock,
+  AlertCircle, Clock, CheckCircle, XCircle,
 } from 'lucide-react'
 import { getChildProgress } from '../../services/parent'
 import type { StudentDetailForParent, DetailedAttempt } from '../../types/parent'
 
-function formatTime(seconds: number | null): string {
-  if (seconds === null || seconds === undefined) return '-'
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  if (mins === 0) return `${secs}s`
-  return `${mins}m ${secs}s`
-}
-
 function formatDate(dateString: string | null): string {
   if (!dateString) return '-'
   return new Date(dateString).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function formatScore(score: number | null): string {
-  if (score === null || score === undefined) return '-'
-  return `${Math.round(score)}%`
 }
 
 export function ChildProgressPage() {
@@ -100,7 +87,7 @@ export function ChildProgressPage() {
           </div>
           <div>
             <h1 className="text-2xl font-display font-semibold text-text">{data.student_name}</h1>
-            <p className="text-text-muted text-sm">@{data.student_username} &middot; {data.email}</p>
+            <p className="text-text-muted text-sm">@{data.student_username} · {data.email}</p>
           </div>
         </div>
       </div>
@@ -110,19 +97,19 @@ export function ChildProgressPage() {
         <SummaryCard icon={BarChart3} label="Total Attempts" value={String(data.total_attempts)} color="sage" />
         <SummaryCard icon={Target} label="Average Score" value={averageScore !== null ? `${averageScore}%` : '-'} color={averageScore !== null && averageScore >= 70 ? 'sage' : 'coral'} />
         <SummaryCard icon={BookOpen} label="Standards Attempted" value={String(data.standards_attempted)} color="sage" />
-        <SummaryCard icon={Clock} label="Recent Activity" value={data.recent_attempts.length > 0 ? formatDate(data.recent_attempts[0].completed_at) : 'No activity'} color="sage" />
+        <SummaryCard icon={Clock} label="Recent Activity" value={data.recent_attempts.length > 0 ? formatDate(data.recent_attempts[0].answered_at) : 'No activity'} color="sage" />
       </div>
 
-      {/* Recent Attempts Table */}
+      {/* Recent Answers Table */}
       <div className="bg-surface-elevated rounded-2xl border border-border overflow-hidden">
         <div className="px-6 py-4 border-b border-border">
-          <h2 className="text-lg font-display font-semibold text-text">Recent Attempts</h2>
+          <h2 className="text-lg font-display font-semibold text-text">Recent Answers</h2>
         </div>
 
         {data.recent_attempts.length === 0 ? (
           <div className="text-center py-12">
             <BookOpen className="w-10 h-10 text-text-muted mx-auto mb-3" />
-            <p className="text-text-muted font-display">No quiz attempts yet</p>
+            <p className="text-text-muted font-display">No answers yet</p>
             <p className="text-text-subtle text-sm mt-1">Progress will appear here once the student completes a quiz.</p>
           </div>
         ) : (
@@ -131,15 +118,13 @@ export function ChildProgressPage() {
               <thead className="bg-sage-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Standard</th>
-                  <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Score</th>
-                  <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Questions</th>
-                  <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Time Spent</th>
+                  <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Result</th>
                   <th className="px-6 py-3 text-left text-sm font-display font-medium text-text">Date</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {data.recent_attempts.map((attempt: DetailedAttempt) => (
-                  <tr key={attempt.attempt_id} className="hover:bg-sage-50/50">
+                  <tr key={attempt.answer_id} className="hover:bg-sage-50/50">
                     <td className="px-6 py-4">
                       <div>
                         <p className="font-display font-medium text-text">{attempt.standard_code || 'Unknown'}</p>
@@ -149,15 +134,23 @@ export function ChildProgressPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-display font-semibold ${
-                        attempt.score >= 70 ? 'bg-sage-100 text-sage-700' : 'bg-coral-100 text-coral-700'
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-display font-semibold ${
+                        attempt.is_correct ? 'bg-sage-100 text-sage-700' : 'bg-coral-100 text-coral-700'
                       }`}>
-                        {formatScore(attempt.score)}
+                        {attempt.is_correct ? (
+                          <>
+                            <CheckCircle className="w-3.5 h-3.5" />
+                            Correct
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="w-3.5 h-3.5" />
+                            Incorrect
+                          </>
+                        )}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-sm text-text-muted">{attempt.total_questions}</td>
-                    <td className="px-6 py-4 text-sm text-text-muted">{formatTime(attempt.time_spent_seconds)}</td>
-                    <td className="px-6 py-4 text-sm text-text-muted">{formatDate(attempt.completed_at)}</td>
+                    <td className="px-6 py-4 text-sm text-text-muted">{formatDate(attempt.answered_at)}</td>
                   </tr>
                 ))}
               </tbody>
