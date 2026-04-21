@@ -7,6 +7,9 @@ import type {
   PendingParentLink,
   UserCreateRequest,
   UserStatusUpdate,
+  QuestionInsightsResponse,
+  SmartFillRequest,
+  SmartFillResponse,
 } from '../types/admin';
 import type { User } from '../types/auth';
 import type { QuestionFromDB } from '../types/questions';
@@ -69,14 +72,18 @@ export async function rejectParentLink(linkId: number, reason?: string): Promise
 }
 
 /**
- * Get questions
+ * Get questions with filters
  */
 export async function getAdminQuestions(
   standardId?: number,
+  domainId?: number,
+  gradeId?: number,
   isActive?: boolean
 ): Promise<QuestionFromDB[]> {
   const params = new URLSearchParams();
   if (standardId) params.append('standard_id', standardId.toString());
+  if (domainId) params.append('domain_id', domainId.toString());
+  if (gradeId) params.append('grade_id', gradeId.toString());
   if (isActive !== undefined) params.append('is_active', isActive.toString());
 
   const queryString = params.toString();
@@ -100,6 +107,20 @@ export async function deleteQuestion(questionId: number): Promise<void> {
 }
 
 /**
+ * Bulk delete questions
+ */
+export async function bulkDeleteQuestions(data: {
+  question_ids?: number[];
+  standard_id?: number;
+  domain_id?: number;
+  grade_id?: number;
+  is_active?: boolean;
+  all_matching?: boolean;
+}): Promise<{ deleted: number }> {
+  return post<{ deleted: number }>('/admin/questions/bulk-delete', data, { headers: getAuthHeaders() });
+}
+
+/**
  * Toggle question status
  */
 export async function toggleQuestionStatus(questionId: number): Promise<QuestionFromDB> {
@@ -111,4 +132,22 @@ export async function toggleQuestionStatus(questionId: number): Promise<Question
  */
 export async function generateQuestions(data: QuestionGenerateRequest): Promise<QuestionGenerateResponse> {
   return post<QuestionGenerateResponse>('/admin/generate-questions', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Get question insights
+ */
+export async function getQuestionInsights(subjectId?: number, gradeId?: number): Promise<QuestionInsightsResponse> {
+  const params = new URLSearchParams();
+  if (subjectId) params.append('subject_id', subjectId.toString());
+  if (gradeId) params.append('grade_id', gradeId.toString());
+  const qs = params.toString();
+  return get<QuestionInsightsResponse>(`/admin/question-insights${qs ? `?${qs}` : ''}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Get smart fill suggestions
+ */
+export async function getSmartFillSuggestions(data: SmartFillRequest): Promise<SmartFillResponse> {
+  return post<SmartFillResponse>('/admin/smart-fill-suggestions', data, { headers: getAuthHeaders() });
 }

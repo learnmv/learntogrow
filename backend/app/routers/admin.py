@@ -11,8 +11,10 @@ from app.schemas.admin import (
     UserCreateAdmin,
     UserStatusUpdate,
     AdminDashboardStats,
+    BulkDeleteRequest,
+    SmartFillRequest,
 )
-from app.schemas.questions import QuestionResponse, QuestionEditRequest
+from app.schemas.questions import QuestionDBResponse
 from app.models import User
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -166,9 +168,11 @@ def reject_parent_link(
 
 # ==================== Question Management ====================
 
-@router.get("/questions", response_model=List[QuestionResponse])
+@router.get("/questions", response_model=List[QuestionDBResponse])
 def get_questions(
     standard_id: Optional[int] = None,
+    domain_id: Optional[int] = None,
+    grade_id: Optional[int] = None,
     is_active: Optional[bool] = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
@@ -179,6 +183,8 @@ def get_questions(
     admin_service = AdminService(db)
     questions = admin_service.get_questions(
         standard_id=standard_id,
+        domain_id=domain_id,
+        grade_id=grade_id,
         is_active=is_active,
         skip=skip,
         limit=limit
@@ -186,7 +192,7 @@ def get_questions(
     return questions
 
 
-@router.patch("/questions/{question_id}", response_model=QuestionResponse)
+@router.patch("/questions/{question_id}", response_model=QuestionDBResponse)
 def update_question(
     question_id: int,
     updates: dict,
@@ -225,7 +231,7 @@ def delete_question(
     return None
 
 
-@router.post("/questions/{question_id}/toggle-status", response_model=QuestionResponse)
+@router.post("/questions/{question_id}/toggle-status", response_model=QuestionDBResponse)
 def toggle_question_status(
     question_id: int,
     current_user: dict = Depends(require_role(["admin"])),
@@ -242,6 +248,33 @@ def toggle_question_status(
         )
 
     return question
+
+
+@router.post("/questions/bulk-delete")
+def bulk_delete_questions(
+    request: BulkDeleteRequest,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Delete multiple questions or all questions matching filters."""
+    admin_service = AdminService(db)
+
+    if request.all_matching:
+        count = admin_service.delete_questions_by_filters(
+            standard_id=request.standard_id,
+            domain_id=request.domain_id,
+            grade_id=request.grade_id,
+            is_active=request.is_active
+        )
+    else:
+        if not request.question_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either question_ids or all_matching must be provided"
+            )
+        count = admin_service.delete_questions_by_ids(request.question_ids)
+
+    return {"deleted": count}
 
 
 # ==================== Question Generation ====================
@@ -302,6 +335,36 @@ def generate_questions_admin(
         "questions_created": results["questions_created"],
         "errors": results["errors"] if results["errors"] else None
     }
+
+
+# ==================== Question Insights ====================
+
+@router.get("/question-insights")
+def get_question_insights(
+    subject_id: Optional[int] = None,
+    grade_id: Optional[int] = None,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get insights about question coverage and student performance per domain."""
+    admin_service = AdminService(db)
+    return admin_service.get_question_insights(subject_id, grade_id)
+
+
+@router.post("/smart-fill-suggestions")
+def get_smart_fill_suggestions(
+    request: SmartFillRequest,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get smart suggestions for question generation based on gaps and student data."""
+    admin_service = AdminService(db)
+    return admin_service.get_smart_fill_suggestions(
+        subject_id=request.subject_id,
+        grade_id=request.grade_id,
+        fill_mode=request.fill_mode,
+        max_standards=request.max_standards
+    )
 
 
 # ==================== Prompt Management ====================

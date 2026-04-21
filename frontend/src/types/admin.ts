@@ -54,3 +54,45 @@ export interface UserCreateRequest {
 export interface UserStatusUpdate {
   is_active: boolean;
 }
+
+export interface DomainInsight {
+  domain_id: number;
+  domain_name: string;
+  domain_code: string;
+  standard_count: number;
+  question_count: number;
+  answered_count: number;
+  accuracy: number | null;
+  coverage_status: string;
+  avg_difficulty: number | null;
+}
+
+export interface QuestionInsightsResponse {
+  total_standards: number;
+  total_questions: number;
+  coverage_percent: number;
+  domains: DomainInsight[];
+}
+
+export interface SmartFillSuggestion {
+  standard_id: number;
+  standard_code: string;
+  standard_description: string;
+  domain_name: string;
+  reason: string;
+  suggested_difficulty: number;
+  suggested_count: number;
+}
+
+export interface SmartFillRequest {
+  subject_id: number;
+  grade_id?: number;
+  fill_mode: 'gaps' | 'struggling' | 'balanced';
+  max_standards: number;
+}
+
+export interface SmartFillResponse {
+  suggestions: SmartFillSuggestion[];
+  total_suggested: number;
+  estimated_generation_time: string;
+}

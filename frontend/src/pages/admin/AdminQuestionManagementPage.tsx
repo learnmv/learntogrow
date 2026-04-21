@@ -24,8 +24,8 @@ export function AdminQuestionManagementPage() {
       setLoading(true)
       setError(null)
       const standardId = standardIdFilter ? Number(standardIdFilter) : undefined
-      const isActive = activeFilter === 'all' ? undefined : activeFilter === 'active'
-      const data = await getAdminQuestions(standardId, isActive)
+      const isActive = activeFilter === 'all' ? undefined : activeFilter === 'active' ? true : false
+      const data = await getAdminQuestions(standardId, undefined, undefined, isActive)
       setQuestions(data)
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to load questions'

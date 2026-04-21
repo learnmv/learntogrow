@@ -67,11 +67,58 @@ class AdminDashboardStats(BaseModel):
     recent_quiz_attempts: int
 
 
-class BulkQuestionGenerateRequest(BaseModel):
-    """Bulk question generation by filters."""
+class BulkDeleteRequest(BaseModel):
+    """Bulk question deletion request."""
+    question_ids: Optional[List[int]] = Field(None, description="Specific question IDs to delete")
+    standard_id: Optional[int] = None
+    domain_id: Optional[int] = None
+    grade_id: Optional[int] = None
+    is_active: Optional[bool] = None
+    all_matching: bool = Field(False, description="Delete all questions matching filters")
+
+
+class SmartFillRequest(BaseModel):
+    """Smart fill question generation request."""
     subject_id: int
     grade_id: Optional[int] = None
-    only_diagram_questions: bool = False
-    questions_per_standard: int = Field(1, ge=1, le=10)
-    question_type: str = "multiple_choice"
-    async_mode: bool = True  # Run in background
+    fill_mode: str = Field("gaps", pattern="^(gaps|struggling|balanced)$")
+    max_standards: int = Field(10, ge=1, le=50)
+
+
+class DomainInsight(BaseModel):
+    """Insight for a single domain."""
+    domain_id: int
+    domain_name: str
+    domain_code: str
+    standard_count: int
+    question_count: int
+    answered_count: int
+    accuracy: Optional[float]
+    coverage_status: str  # good, low, none
+    avg_difficulty: Optional[float]
+
+
+class QuestionInsightsResponse(BaseModel):
+    """Question insights response."""
+    total_standards: int
+    total_questions: int
+    coverage_percent: float
+    domains: List[DomainInsight]
+
+
+class SmartFillSuggestion(BaseModel):
+    """Suggestion for smart fill generation."""
+    standard_id: int
+    standard_code: str
+    standard_description: str
+    domain_name: str
+    reason: str
+    suggested_difficulty: float
+    suggested_count: int
+
+
+class SmartFillResponse(BaseModel):
+    """Smart fill suggestions response."""
+    suggestions: List[SmartFillSuggestion]
+    total_suggested: int
+    estimated_generation_time: str

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowLeft, ArrowRight, BookOpen, RotateCcw, CheckCircle, XCircle, RefreshCw } from 'lucide-react'
 import { fetchStandards } from '../services/standards'
 import { fetchQuestionsByStandard } from '../services/questions'
+import { getAdaptiveQuestion } from '../services/adaptive'
 import { recordAnswer } from '../services/student'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
@@ -17,6 +18,7 @@ interface QuizProps {
   subjectId: string
   gradeId: string
   onExit: () => void
+  adaptive?: boolean  // Enable adaptive learning mode
 }
 
 // Storage key for quiz progress
@@ -31,7 +33,7 @@ interface SavedProgress {
   timestamp: number
 }
 
-export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
+export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps) {
   const { isAuthenticated } = useAuth()
   const [standards, setStandards] = useState<Standard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -43,9 +45,16 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [generatingQuestion, setGeneratingQuestion] = useState(false)
   const [retryCount, setRetryCount] = useState(0)
   const [answers, setAnswers] = useState<Record<number, { selected: string; correct: boolean }>>({})
+  const [adaptiveCount, setAdaptiveCount] = useState(0)  // Track questions answered in adaptive mode
 
-  // Fetch standards on mount
+  // Fetch standards on mount (only for normal mode)
   useEffect(() => {
+    if (adaptive) {
+      // In adaptive mode, we don't need standards upfront
+      setLoading(false)
+      return
+    }
+
     async function loadStandards() {
       try {
         const standardsList = await fetchStandards({
@@ -61,7 +70,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
 
     loadStandards()
-  }, [subjectId, gradeId])
+  }, [subjectId, gradeId, adaptive])
 
   // Load progress from localStorage on mount
   useEffect(() => {
@@ -115,9 +124,9 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
   }, [currentIndex, answers, subjectId, gradeId, loading, standards.length])
 
-  // Load question from pre-generated questions
+  // Load question from pre-generated questions or adaptive endpoint
   const loadQuestion = useCallback(async (isRetry = false) => {
-    if (standards.length === 0) return
+    if (!adaptive && standards.length === 0) return
 
     setGeneratingQuestion(true)
     setError(null)
@@ -126,10 +135,17 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
 
     try {
-      // Fetch a single question
-      const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 1)
+      let question: QuestionFromDB | null = null
 
-      const question = questions[0] || null
+      if (adaptive) {
+        // Fetch adaptive question
+        question = await getAdaptiveQuestion(parseInt(gradeId))
+      } else {
+        // Fetch a single question for the current standard
+        const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 1)
+        question = questions[0] || null
+      }
+
       if (!question) {
         setError('No questions available for this standard.')
         setCurrentQuestion(null)
@@ -137,11 +153,16 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
       }
 
       setCurrentQuestion(question)
-      // Check if we have a saved answer for this question
-      const savedAnswer = answers[currentIndex]
-      if (savedAnswer) {
-        setSelectedAnswer(savedAnswer.selected)
-        setShowResult(true)
+      // Check if we have a saved answer for this question (only in normal mode)
+      if (!adaptive) {
+        const savedAnswer = answers[currentIndex]
+        if (savedAnswer) {
+          setSelectedAnswer(savedAnswer.selected)
+          setShowResult(true)
+        } else {
+          setSelectedAnswer(null)
+          setShowResult(false)
+        }
       } else {
         setSelectedAnswer(null)
         setShowResult(false)
@@ -152,20 +173,31 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     } finally {
       setGeneratingQuestion(false)
     }
-  }, [standards, currentIndex, answers])
+  }, [standards, currentIndex, adaptive, gradeId])
 
   // Generate question when currentIndex changes
   useEffect(() => {
     loadQuestion()
-  }, [loadQuestion])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, adaptive, gradeId, subjectId])
 
   const handlePrevious = () => {
+    if (adaptive) return // No previous in adaptive mode
     if (currentIndex > 0) {
       setCurrentIndex(currentIndex - 1)
     }
   }
 
   const handleNext = () => {
+    if (adaptive) {
+      // In adaptive mode, next means fetch a new adaptive question
+      setAdaptiveCount((c) => c + 1)
+      setCurrentIndex((i) => i + 1)
+      setSelectedAnswer(null)
+      setShowResult(false)
+      // loadQuestion will be triggered by useEffect when currentIndex changes
+      return
+    }
     if (currentIndex < standards.length - 1) {
       setCurrentIndex(currentIndex + 1)
     }
@@ -199,6 +231,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
         console.error('Failed to record answer:', err)
       }
     }
+
   }
 
   const handleExit = () => {
@@ -265,8 +298,8 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     )
   }
 
-  // Handle case where no standards were found
-  if (standards.length === 0) {
+  // Handle case where no standards were found (only in normal mode)
+  if (!adaptive && standards.length === 0) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center px-6">
         <div className="text-center max-w-md">
@@ -286,8 +319,10 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     )
   }
 
-  const currentStandard = standards[currentIndex]
-  const progress = ((currentIndex + 1) / standards.length) * 100
+  const currentStandard = adaptive ? null : standards[currentIndex]
+  const progress = adaptive
+    ? Math.min(((adaptiveCount + 1) / 20) * 100, 100)
+    : ((currentIndex + 1) / standards.length) * 100
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sage-50 via-surface to-surface py-8 px-4">
@@ -309,7 +344,9 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
           <div className="flex items-center gap-3">
             <BookOpen className="w-5 h-5 text-sage-600" />
             <span className="font-display font-medium text-text">
-              Question {currentIndex + 1} of {standards.length}
+              {adaptive
+                ? `Adaptive Question ${currentIndex + 1}`
+                : `Question ${currentIndex + 1} of ${standards.length}`}
             </span>
           </div>
         </motion.div>
@@ -353,14 +390,16 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
               className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border"
             >
               {/* Standard Info */}
-              <div className="flex items-center gap-3 mb-6">
-                <span className="px-3 py-1 bg-sage-100 text-sage-700 font-display font-medium text-sm rounded-full">
-                  {currentStandard?.code}
-                </span>
-                <span className="text-text-muted text-sm">
-                  Difficulty: {Math.round((currentStandard?.difficulty_base || 0) * 100)}%
-                </span>
-              </div>
+              {currentStandard && (
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="px-3 py-1 bg-sage-100 text-sage-700 font-display font-medium text-sm rounded-full">
+                    {currentStandard?.code}
+                  </span>
+                  <span className="text-text-muted text-sm">
+                    Difficulty: {Math.round((currentStandard?.difficulty_base || 0) * 100)}%
+                  </span>
+                </div>
+              )}
 
               {/* Question Text */}
               <h2
@@ -495,37 +534,39 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
         >
           <button
             onClick={handlePrevious}
-            disabled={currentIndex === 0}
+            disabled={adaptive || currentIndex === 0}
             className="flex items-center gap-2 px-6 py-3 rounded-xl font-display font-medium transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed text-text-muted hover:text-text hover:bg-surface-elevated"
           >
             <ArrowLeft className="w-4 h-4" />
             Previous
           </button>
 
-          <div className="flex gap-2">
-            {standards.slice(0, Math.min(10, standards.length)).map((_, idx) => (
-              <button
-                key={idx}
-                onClick={() => setCurrentIndex(idx)}
-                className={cn(
-                  'w-2 h-2 rounded-full transition-all duration-200',
-                  idx === currentIndex && 'bg-sage-600 w-6',
-                  idx < currentIndex && idx !== currentIndex && 'bg-sage-300',
-                  idx > currentIndex && 'bg-sage-100'
-                )}
-              />
-            ))}
-            {standards.length > 10 && (
-              <span className="text-text-muted text-sm ml-1">...</span>
-            )}
-          </div>
+          {!adaptive && (
+            <div className="flex gap-2">
+              {standards.slice(0, Math.min(10, standards.length)).map((_, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setCurrentIndex(idx)}
+                  className={cn(
+                    'w-2 h-2 rounded-full transition-all duration-200',
+                    idx === currentIndex && 'bg-sage-600 w-6',
+                    idx < currentIndex && idx !== currentIndex && 'bg-sage-300',
+                    idx > currentIndex && 'bg-sage-100'
+                  )}
+                />
+              ))}
+              {standards.length > 10 && (
+                <span className="text-text-muted text-sm ml-1">...</span>
+              )}
+            </div>
+          )}
 
           <button
             onClick={handleNext}
-            disabled={currentIndex === standards.length - 1}
+            disabled={!adaptive && currentIndex === standards.length - 1}
             className="flex items-center gap-2 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-medium hover:bg-sage-700 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-sage-200 hover:shadow-xl hover:-translate-y-0.5"
           >
-            Next
+            {adaptive ? 'Next Question' : 'Next'}
             <ArrowRight className="w-4 h-4" />
           </button>
         </motion.div>

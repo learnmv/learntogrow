@@ -5,18 +5,23 @@ import {
   Shield,
   BookOpen,
   FileText,
-  CheckSquare,
   Link2,
   Loader2,
+  HelpCircle,
+  BarChart2,
+  Zap,
 } from 'lucide-react';
 import { getDashboardStats } from '../../services/admin';
 import { QuestionGenerationForm } from './QuestionGenerationForm';
 import { UserManagement } from './UserManagement';
 import { PendingLinks } from './PendingLinks';
 import { PromptEditor } from './PromptEditor';
+import { QuestionsTab } from './QuestionsTab';
+import { QuestionInsightsPanel } from './QuestionInsightsPanel';
+import { QuickGenerateForm } from './QuickGenerateForm';
 import type { AdminDashboardStats } from '../../types/admin';
 
-type Tab = 'overview' | 'generate' | 'prompts' | 'users' | 'links';
+type Tab = 'overview' | 'insights' | 'quick-generate' | 'questions' | 'generate' | 'prompts' | 'users' | 'links';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -42,7 +47,10 @@ export function AdminDashboard() {
 
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: Shield },
-    { id: 'generate' as Tab, label: 'Generate Questions', icon: BookOpen },
+    { id: 'insights' as Tab, label: 'Insights', icon: BarChart2 },
+    { id: 'quick-generate' as Tab, label: 'Quick Generate', icon: Zap },
+    { id: 'questions' as Tab, label: 'Questions', icon: HelpCircle },
+    { id: 'generate' as Tab, label: 'Advanced Generate', icon: BookOpen },
     { id: 'prompts' as Tab, label: 'Prompts', icon: FileText },
     { id: 'users' as Tab, label: 'User Management', icon: Users },
     { id: 'links' as Tab, label: 'Pending Links', icon: Link2 },
@@ -81,7 +89,6 @@ export function AdminDashboard() {
 
   return (
     <div className="min-h-screen bg-surface">
-      {/* Header */}
       <header className="bg-surface-elevated border-b border-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between">
@@ -96,7 +103,6 @@ export function AdminDashboard() {
         </div>
       </header>
 
-      {/* Navigation Tabs */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="flex gap-2 overflow-x-auto pb-2">
           {tabs.map((tab) => {
@@ -118,7 +124,6 @@ export function AdminDashboard() {
           })}
         </div>
 
-        {/* Tab Content */}
         <div className="mt-6">
           {activeTab === 'overview' && stats && (
             <motion.div
@@ -126,73 +131,51 @@ export function AdminDashboard() {
               animate={{ opacity: 1, y: 0 }}
               className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
             >
-              {/* Total Users */}
-              <StatCard
-                icon={Users}
-                label="Total Users"
-                value={stats.total_users}
-                sublabel={`${stats.total_students} students, ${stats.total_parents} parents`}
-              />
+              <StatCard icon={Users} label="Total Users" value={stats.total_users} sublabel={`${stats.total_students} students, ${stats.total_parents} parents`} />
+              <StatCard icon={BookOpen} label="Total Questions" value={stats.total_questions} sublabel="Generated questions in database" />
+              <StatCard icon={Shield} label="Quiz Attempts" value={stats.total_quiz_attempts} sublabel={`${stats.recent_quiz_attempts} today`} />
+              <StatCard icon={Link2} label="Pending Links" value={stats.pending_parent_links} sublabel="Parent-student requests" highlight={stats.pending_parent_links > 0} />
+            </motion.div>
+          )}
 
-              {/* Questions */}
-              <StatCard
-                icon={BookOpen}
-                label="Total Questions"
-                value={stats.total_questions}
-                sublabel="Generated questions in database"
-              />
+          {activeTab === 'insights' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <QuestionInsightsPanel />
+            </motion.div>
+          )}
 
-              {/* Quiz Attempts */}
-              <StatCard
-                icon={CheckSquare}
-                label="Quiz Attempts"
-                value={stats.total_quiz_attempts}
-                sublabel={`${stats.recent_quiz_attempts} today`}
-              />
+          {activeTab === 'quick-generate' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <QuickGenerateForm />
+            </motion.div>
+          )}
 
-              {/* Pending Links */}
-              <StatCard
-                icon={Link2}
-                label="Pending Links"
-                value={stats.pending_parent_links}
-                sublabel="Parent-student requests"
-                highlight={stats.pending_parent_links > 0}
-              />
+          {activeTab === 'questions' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <QuestionsTab />
             </motion.div>
           )}
 
           {activeTab === 'generate' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <QuestionGenerationForm onSuccess={loadStats} />
             </motion.div>
           )}
 
           {activeTab === 'prompts' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <PromptEditor />
             </motion.div>
           )}
 
           {activeTab === 'users' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <UserManagement />
             </motion.div>
           )}
 
           {activeTab === 'links' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-            >
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <PendingLinks />
             </motion.div>
           )}
@@ -212,11 +195,7 @@ interface StatCardProps {
 
 function StatCard({ icon: Icon, label, value, sublabel, highlight }: StatCardProps) {
   return (
-    <div
-      className={`bg-surface-elevated rounded-2xl p-6 shadow-sm border ${
-        highlight ? 'border-coral-300' : 'border-border'
-      }`}
-    >
+    <div className={`bg-surface-elevated rounded-2xl p-6 shadow-sm border ${highlight ? 'border-coral-300' : 'border-border'}`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-text-muted">{label}</p>

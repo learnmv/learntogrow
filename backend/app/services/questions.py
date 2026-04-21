@@ -8,7 +8,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Standard, Question, AnsweredQuestion
+from app.models import Standard, Question, AnsweredQuestion, DomainProgress, Domain
 from app.prompts import format_prompt, AppletType
 
 logger = logging.getLogger(__name__)
@@ -289,3 +289,89 @@ class QuestionService:
         # All retries exhausted
         logger.error(f"Failed to generate valid question after {MAX_RETRIES} attempts: {last_error}")
         raise RuntimeError(f"Failed to generate valid question after {MAX_RETRIES} attempts. Last error: {last_error}")
+
+    def get_adaptive_question(
+        self,
+        student_id: int,
+        grade_id: int,
+        student_service=None
+    ) -> Optional[Question]:
+        """Get an adaptively-selected question based on student performance.
+
+        Algorithm:
+        1. Calculate priority for each domain (weak domains = higher priority)
+        2. Try to find a question at the student's current difficulty level
+        3. Fall back to any unanswered question for the grade
+        """
+        from app.services.student import StudentService
+        if student_service is None:
+            student_service = StudentService(self.db)
+
+        # Get domain progress for this student
+        domain_progress_list = student_service.get_domain_progress(student_id)
+
+        # Get all domains for this grade
+        domains = self.db.query(Domain).join(Standard).filter(
+            Standard.grade_id == grade_id
+        ).distinct().all()
+
+        # Build priority map: lower accuracy -> higher priority
+        domain_priorities = {}
+        domain_difficulties = {}
+
+        for dp in domain_progress_list:
+            domain_priorities[dp["domain_id"]] = float(dp["accuracy"])
+            domain_difficulties[dp["domain_id"]] = float(dp["current_difficulty"])
+
+        # For domains with no progress, give medium priority (0.5) so they're still eligible
+        for domain in domains:
+            if domain.id not in domain_priorities:
+                domain_priorities[domain.id] = 0.5
+                domain_difficulties[domain.id] = 0.5
+
+        # Sort domains by priority (ascending accuracy = highest priority first)
+        sorted_domains = sorted(domain_priorities.keys(), key=lambda d: domain_priorities[d])
+
+        # Get answered question IDs for this student
+        answered_ids = self.db.query(AnsweredQuestion.question_id).filter(
+            AnsweredQuestion.student_id == student_id
+        ).subquery()
+
+        # Try each domain in priority order
+        for domain_id in sorted_domains:
+            # Get standards in this domain for this grade
+            standards = self.db.query(Standard).filter(
+                Standard.grade_id == grade_id,
+                Standard.domain_id == domain_id
+            ).all()
+
+            if not standards:
+                continue
+
+            standard_ids = [s.id for s in standards]
+            target_difficulty = domain_difficulties.get(domain_id, 0.5)
+
+            # Try to find a question near the target difficulty, unanswered
+            question = self.db.query(Question).filter(
+                Question.standard_id.in_(standard_ids),
+                Question.is_active == True,
+                Question.difficulty.between(target_difficulty - 0.15, target_difficulty + 0.15),
+                Question.id.notin_(answered_ids)
+            ).order_by(func.random()).first()
+
+            if question:
+                return question
+
+        # Fallback: any unanswered question for this grade
+        standards = self.db.query(Standard).filter(Standard.grade_id == grade_id).all()
+        standard_ids = [s.id for s in standards]
+
+        if standard_ids:
+            question = self.db.query(Question).filter(
+                Question.standard_id.in_(standard_ids),
+                Question.is_active == True,
+                Question.id.notin_(answered_ids)
+            ).order_by(func.random()).first()
+            return question
+
+        return None

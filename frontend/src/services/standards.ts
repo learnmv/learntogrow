@@ -78,7 +78,9 @@ export async function fetchGradesBySubject(subjectId: number): Promise<Grade[]> 
  * and filter client-side, or return all domains
  */
 export async function fetchDomainsByGrade(_gradeId: number): Promise<Domain[]> {
-  // Since backend doesn't support grade filter, we fetch domains without filter
-  // In a real app, you might want to add backend support for this
   return fetchDomains()
+}
+
+export async function fetchDomainsBySubject(subjectId: number): Promise<Domain[]> {
+  return fetchDomains(subjectId)
 }

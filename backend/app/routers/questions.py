@@ -5,12 +5,13 @@ from typing import List, Optional
 
 from app.dependencies import get_db
 from app.services.questions import QuestionService
+from app.services.student import StudentService
 from app.schemas.questions import (
     QuestionGenerateRequest,
     QuestionResponse,
     QuestionDBResponse
 )
-from app.models import AnsweredQuestion, Question
+from app.models import AnsweredQuestion, Question, Standard
 from app.routers.auth import get_current_user, require_role
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -130,4 +131,42 @@ def record_answer(
     db.execute(stmt)
     db.commit()
 
+    # Update domain progress for adaptive learning
+    standard = db.query(Standard).filter(Standard.id == question.standard_id).first()
+    if standard:
+        student_service = StudentService(db)
+        student_service.update_domain_progress(
+            student_id=current_user["user_id"],
+            domain_id=standard.domain_id,
+            is_correct=is_correct
+        )
+
     return {"message": "Answer recorded successfully"}
+
+
+@router.get("/adaptive/{grade_id}", response_model=QuestionDBResponse)
+def get_adaptive_question(
+    grade_id: int,
+    current_user: dict = Depends(require_role(["student"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Get an adaptively-selected question based on student performance.
+
+    This endpoint prioritizes domains where the student needs improvement
+    and adjusts difficulty based on performance history.
+    """
+    question_service = QuestionService(db)
+
+    question = question_service.get_adaptive_question(
+        student_id=current_user["user_id"],
+        grade_id=grade_id,
+    )
+
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No questions available for this grade"
+        )
+
+    return question
