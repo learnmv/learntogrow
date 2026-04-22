@@ -126,7 +126,6 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
 
   // Load question from pre-generated questions or adaptive endpoint
   const loadQuestion = useCallback(async (isRetry = false) => {
-    if (generatingQuestion) return // prevent concurrent calls
     if (!adaptive && standards.length === 0) return
 
     setGeneratingQuestion(true)
@@ -142,43 +141,9 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
         // Fetch adaptive question
         question = await getAdaptiveQuestion(parseInt(gradeId))
       } else {
-        // Try current standard first, then auto-skip forward to find one with questions
-        let attempts = 0
-        const maxAttempts = standards.length
-        let offset = 0
-
-        while (attempts < maxAttempts && !question) {
-          const targetIndex = currentIndex + offset
-          if (targetIndex >= standards.length) break
-          const standardId = standards[targetIndex].id
-          const questions = await fetchQuestionsByStandard(standardId, 1)
-          question = questions[0] || null
-          if (!question) {
-            offset++
-            attempts++
-          }
-        }
-
-        // If going forward didn't work, try going backward
-        if (!question) {
-          offset = 1
-          while (attempts < maxAttempts && !question) {
-            const targetIndex = currentIndex - offset
-            if (targetIndex < 0) break
-            const standardId = standards[targetIndex].id
-            const questions = await fetchQuestionsByStandard(standardId, 1)
-            question = questions[0] || null
-            if (!question) {
-              offset++
-              attempts++
-            }
-          }
-        }
-
-        // Update index if we skipped to a different standard
-        if (question && offset > 0) {
-          setCurrentIndex((prev) => prev + offset)
-        }
+        // Fetch a single question for the current standard
+        const questions = await fetchQuestionsByStandard(standards[currentIndex].id, 1)
+        question = questions[0] || null
       }
 
       if (!question) {
@@ -208,16 +173,13 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
     } finally {
       setGeneratingQuestion(false)
     }
-  }, [generatingQuestion, standards, currentIndex, adaptive, gradeId])
+  }, [standards, currentIndex, adaptive, gradeId])
 
-  // Generate question when currentIndex changes or after standards load
+  // Generate question when currentIndex changes
   useEffect(() => {
-    if (!adaptive && standards.length === 0) return // wait for standards
-    if (!currentQuestion && !error) {
-      loadQuestion()
-    }
+    loadQuestion()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, adaptive, gradeId, subjectId, standards.length])
+  }, [currentIndex, adaptive, gradeId, subjectId])
 
   const handlePrevious = () => {
     if (adaptive) return // No previous in adaptive mode
