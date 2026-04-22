@@ -2,8 +2,9 @@
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -20,6 +21,8 @@ from app.models import (
 from app.services.questions import QuestionService
 
 logger = logging.getLogger(__name__)
+
+MAX_CONCURRENT_STANDARDS = 12
 
 
 class QuestionGenerationJobService:
@@ -191,6 +194,60 @@ class QuestionGenerationJobService:
         finally:
             db.close()
 
+def _run_standard_worker(
+    job_std_id: int,
+    question_type: str,
+    model: Optional[str],
+    timeout: int,
+) -> Tuple[int, int, Optional[str]]:
+    """Run generation for a single standard in its own thread + DB session.
+
+    Returns (standard_id, questions_created, error_or_none).
+    """
+    db = SessionLocal()
+    try:
+        job_std = db.query(GenerationJobStandard).get(job_std_id)
+        if not job_std:
+            return (0, 0, "Job standard not found")
+
+        job_std.status = JobStandardStatus.RUNNING.value
+        job_std.started_at = datetime.utcnow()
+        db.commit()
+
+        service = QuestionGenerationJobService(db)
+        question_service = QuestionService(db)
+
+        created = service._generate_for_standard(
+            question_service=question_service,
+            job_std=job_std,
+            question_type=question_type,
+            model=model,
+            timeout=timeout,
+        )
+
+        job_std.status = JobStandardStatus.DONE.value
+        job_std.questions_created = created
+        job_std.completed_at = datetime.utcnow()
+        db.commit()
+        return (job_std.standard_id, created, None)
+    except Exception as exc:
+        logger.error(f"Standard worker {job_std_id} failed: {exc}")
+        try:
+            db.rollback()
+            job_std = db.query(GenerationJobStandard).get(job_std_id)
+            if job_std:
+                job_std.status = JobStandardStatus.FAILED.value
+                job_std.error = str(exc)[:1000]
+                job_std.completed_at = datetime.utcnow()
+                db.commit()
+        except Exception as inner_exc:
+            logger.exception(f"Failed to mark standard {job_std_id} as failed: {inner_exc}")
+        sid = job_std.standard_id if job_std else 0
+        return (sid, 0, str(exc))
+    finally:
+        db.close()
+
+
     @staticmethod
     def _do_run(
         db: Session,
@@ -217,7 +274,6 @@ class QuestionGenerationJobService:
         job.started_at = datetime.utcnow()
         db.commit()
 
-        question_service = QuestionService(db)
         job_errors: List[str] = []
 
         # Load pending standards in deterministic order
@@ -231,43 +287,54 @@ class QuestionGenerationJobService:
             .all()
         )
 
-        for job_std in pending:
-            # Check cancellation between each standard
+        for i in range(0, len(pending), MAX_CONCURRENT_STANDARDS):
+            # Check cancellation before each batch
             db.refresh(job)
             if job.status == JobStatus.CANCELLED.value:
                 logger.info(f"Job {job_id} cancelled, stopping")
                 break
 
-            # Mark standard as running
-            job_std.status = JobStandardStatus.RUNNING.value
-            job_std.started_at = datetime.utcnow()
-            db.commit()
+            batch = pending[i : i + MAX_CONCURRENT_STANDARDS]
 
-            try:
-                created = service._generate_for_standard(
-                    question_service=question_service,
-                    job_std=job_std,
-                    question_type=question_type,
-                    model=model,
-                    timeout=timeout,
-                )
+            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
+                futures = {
+                    executor.submit(
+                        _run_standard_worker,
+                        job_std.id,
+                        question_type,
+                        model,
+                        timeout,
+                    ): job_std
+                    for job_std in batch
+                }
 
-                job_std.status = JobStandardStatus.DONE.value
-                job_std.questions_created = created
-                job_std.completed_at = datetime.utcnow()
-                job.questions_created += created
-                job.completed_standards += 1
+                for future in as_completed(futures):
+                    try:
+                        standard_id, created, error = future.result()
+                        if error:
+                            job_errors.append(f"Standard {standard_id}: {error}")
+                    except Exception as exc:
+                        logger.error(f"Unexpected worker error in job {job_id}: {exc}")
+                        job_errors.append(str(exc))
 
-            except Exception as exc:
-                logger.error(
-                    f"Standard {job_std.standard_id} failed in job {job_id}: {exc}"
-                )
-                job_std.status = JobStandardStatus.FAILED.value
-                job_std.error = str(exc)[:1000]
-                job_std.completed_at = datetime.utcnow()
-                job.failed_standards += 1
-                job_errors.append(f"Standard {job_std.standard_id}: {exc}")
-
+            # Recompute aggregates from DB after each batch
+            job = db.query(GenerationJob).get(job_id)
+            if not job:
+                break
+            summary = (
+                db.query(GenerationJobStandard)
+                .filter(GenerationJobStandard.job_id == job_id)
+                .all()
+            )
+            job.completed_standards = sum(
+                1 for js in summary if js.status == JobStandardStatus.DONE.value
+            )
+            job.failed_standards = sum(
+                1 for js in summary if js.status == JobStandardStatus.FAILED.value
+            )
+            job.questions_created = sum(
+                (js.questions_created or 0) for js in summary
+            )
             db.commit()
 
         # Finalise job
@@ -275,10 +342,34 @@ class QuestionGenerationJobService:
         if job.status == JobStatus.CANCELLED.value:
             return
 
+        job = db.query(GenerationJob).get(job_id)
+        if not job:
+            return
+
+        summary = (
+            db.query(GenerationJobStandard)
+            .filter(GenerationJobStandard.job_id == job_id)
+            .all()
+        )
+        job.completed_standards = sum(
+            1 for js in summary if js.status == JobStandardStatus.DONE.value
+        )
+        job.failed_standards = sum(
+            1 for js in summary if js.status == JobStandardStatus.FAILED.value
+        )
+        job.questions_created = sum(
+            (js.questions_created or 0) for js in summary
+        )
         job.errors = job_errors
-        job.status = JobStatus.COMPLETED.value if job.failed_standards == 0 else JobStatus.FAILED.value
-        if job.status == JobStatus.COMPLETED.value and job.completed_standards < job.total_standards:
-            # Some standards were skipped (e.g. cancelled mid-way)
+        job.status = (
+            JobStatus.COMPLETED.value
+            if job.failed_standards == 0
+            else JobStatus.FAILED.value
+        )
+        if (
+            job.status == JobStatus.COMPLETED.value
+            and job.completed_standards < job.total_standards
+        ):
             job.status = JobStatus.FAILED.value
         job.completed_at = datetime.utcnow()
         db.commit()
