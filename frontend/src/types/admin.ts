@@ -20,6 +20,52 @@ export interface QuestionGenerateResponse {
   errors: string[] | null;
 }
 
+// --- Generation Jobs (async) ---
+
+export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type JobStandardStatus = 'pending' | 'running' | 'done' | 'failed';
+
+export interface GenerationJobStandard {
+  id: number;
+  standard_id: number;
+  questions_requested: number;
+  questions_created: number;
+  status: JobStandardStatus;
+  error?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+}
+
+export interface GenerationJob {
+  id: number;
+  status: JobStatus;
+  subject_id?: number | null;
+  grade_id?: number | null;
+  total_standards: number;
+  completed_standards: number;
+  failed_standards: number;
+  questions_created: number;
+  question_type: string;
+  model?: string | null;
+  timeout: number;
+  errors: string[];
+  created_by?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  job_standards?: GenerationJobStandard[];
+}
+
+export interface CreateGenerationJobRequest {
+  standard_ids: number[];
+  questions_per_standard?: number;
+  question_type?: 'multiple_choice' | 'open_ended';
+  model?: string;
+  timeout?: number;
+  subject_id?: number;
+  grade_id?: number;
+}
+
 export interface AdminDashboardStats {
   total_users: number;
   total_students: number;

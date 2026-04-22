@@ -3,6 +3,8 @@ import { getAuthHeaders } from './auth';
 import type {
   QuestionGenerateRequest,
   QuestionGenerateResponse,
+  CreateGenerationJobRequest,
+  GenerationJob,
   AdminDashboardStats,
   PendingParentLink,
   UserCreateRequest,
@@ -128,10 +130,48 @@ export async function toggleQuestionStatus(questionId: number): Promise<Question
 }
 
 /**
- * Generate questions
+ * Generate questions (legacy endpoint — now returns a GenerationJob)
  */
 export async function generateQuestions(data: QuestionGenerateRequest): Promise<QuestionGenerateResponse> {
   return post<QuestionGenerateResponse>('/admin/generate-questions', data, { headers: getAuthHeaders() });
+}
+
+// --- Async Generation Jobs ---
+
+/**
+ * Create a new generation job
+ */
+export async function createGenerationJob(data: CreateGenerationJobRequest): Promise<GenerationJob> {
+  return post<GenerationJob>('/admin/generation-jobs', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * List generation jobs
+ */
+export async function listGenerationJobs(status?: string): Promise<GenerationJob[]> {
+  const params = status ? `?status=${status}` : '';
+  return get<GenerationJob[]>(`/admin/generation-jobs${params}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Get a single generation job with details
+ */
+export async function getGenerationJob(jobId: number): Promise<GenerationJob> {
+  return get<GenerationJob>(`/admin/generation-jobs/${jobId}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Cancel a generation job
+ */
+export async function cancelGenerationJob(jobId: number): Promise<void> {
+  return del(`/admin/generation-jobs/${jobId}`, { headers: getAuthHeaders() });
+}
+
+/**
+ * Retry failed standards from a job
+ */
+export async function retryFailedStandards(jobId: number): Promise<GenerationJob> {
+  return post<GenerationJob>(`/admin/generation-jobs/${jobId}/retry`, {}, { headers: getAuthHeaders() });
 }
 
 /**

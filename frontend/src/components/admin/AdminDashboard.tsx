@@ -9,19 +9,17 @@ import {
   Loader2,
   HelpCircle,
   BarChart2,
-  Zap,
 } from 'lucide-react';
 import { getDashboardStats } from '../../services/admin';
-import { QuestionGenerationForm } from './QuestionGenerationForm';
+import { QuestionGenerationPanel } from './QuestionGenerationPanel';
 import { UserManagement } from './UserManagement';
 import { PendingLinks } from './PendingLinks';
 import { PromptEditor } from './PromptEditor';
 import { QuestionsTab } from './QuestionsTab';
 import { QuestionInsightsPanel } from './QuestionInsightsPanel';
-import { QuickGenerateForm } from './QuickGenerateForm';
 import type { AdminDashboardStats } from '../../types/admin';
 
-type Tab = 'overview' | 'insights' | 'quick-generate' | 'questions' | 'generate' | 'prompts' | 'users' | 'links';
+type Tab = 'overview' | 'insights' | 'generate' | 'questions' | 'prompts' | 'users' | 'links';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -48,9 +46,8 @@ export function AdminDashboard() {
   const tabs = [
     { id: 'overview' as Tab, label: 'Overview', icon: Shield },
     { id: 'insights' as Tab, label: 'Insights', icon: BarChart2 },
-    { id: 'quick-generate' as Tab, label: 'Quick Generate', icon: Zap },
+    { id: 'generate' as Tab, label: 'Generate', icon: BookOpen },
     { id: 'questions' as Tab, label: 'Questions', icon: HelpCircle },
-    { id: 'generate' as Tab, label: 'Advanced Generate', icon: BookOpen },
     { id: 'prompts' as Tab, label: 'Prompts', icon: FileText },
     { id: 'users' as Tab, label: 'User Management', icon: Users },
     { id: 'links' as Tab, label: 'Pending Links', icon: Link2 },
@@ -144,21 +141,15 @@ export function AdminDashboard() {
             </motion.div>
           )}
 
-          {activeTab === 'quick-generate' && (
+          {activeTab === 'generate' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-              <QuickGenerateForm />
+              <QuestionGenerationPanel />
             </motion.div>
           )}
 
           {activeTab === 'questions' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <QuestionsTab />
-            </motion.div>
-          )}
-
-          {activeTab === 'generate' && (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-              <QuestionGenerationForm onSuccess={loadStats} />
             </motion.div>
           )}
 

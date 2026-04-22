@@ -1,9 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Optional, AsyncIterator
+import asyncio
+import json
 
 from app.dependencies import get_db
-from app.services import AdminService
+from app.services import AdminService, QuestionGenerationJobService
 from app.routers.auth import require_role
 from app.schemas.auth import UserResponse
 from app.schemas.admin import (
@@ -13,6 +16,12 @@ from app.schemas.admin import (
     AdminDashboardStats,
     BulkDeleteRequest,
     SmartFillRequest,
+)
+from app.schemas.generation_job import (
+    GenerationJobCreateRequest,
+    GenerationJobResponse,
+    GenerationJobDetailResponse,
+    GenerationJobListParams,
 )
 from app.schemas.questions import QuestionDBResponse
 from app.models import User
@@ -277,64 +286,268 @@ def bulk_delete_questions(
     return {"deleted": count}
 
 
-# ==================== Question Generation ====================
+# ==================== Question Generation (legacy — now async) ====================
 
-@router.post("/generate-questions")
+@router.post("/generate-questions", response_model=GenerationJobResponse)
 def generate_questions_admin(
     request: QuestionGenerateRequestAdmin,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(require_role(["admin"])),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """Generate questions for selected standards.
+    """Generate questions for selected standards (async, returns job immediately).
 
-    Supports generating questions based on:
-    - Subject (required)
-    - Grade (optional - all grades if not specified)
-    - Domains (optional - all domains if not specified)
-    - Specific standards (optional - all standards if not specified)
-    - Difficulty range (optional)
+    **Deprecated in favor of POST /admin/generation-jobs** — this endpoint
+    is kept for backward compatibility but now returns a generation job
+    instead of blocking until completion.
     """
     admin_service = AdminService(db)
 
-    # Get standards matching criteria
+    # Resolve standards using the same filtering logic
     standards = admin_service.get_standards_for_generation(
         subject_id=request.subject_id,
         grade_id=request.grade_id,
         domain_ids=request.domain_ids,
         difficulty_min=request.difficulty_min,
         difficulty_max=request.difficulty_max,
-        only_diagram_questions=False
+        only_diagram_questions=False,
     )
 
-    # Filter by specific standards if provided
     if request.standard_ids:
         standards = [s for s in standards if s.id in request.standard_ids]
 
     if not standards:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No standards found matching the specified criteria"
+            detail="No standards found matching the specified criteria",
         )
 
-    # Generate questions
-    standard_ids = [s.id for s in standards]
-
-    results = admin_service.generate_questions_for_standards(
-        standard_ids=standard_ids,
+    # Create async job
+    job_service = QuestionGenerationJobService(db)
+    job = job_service.create_job(
+        standard_ids=[s.id for s in standards],
         questions_per_standard=request.questions_per_standard,
         question_type=request.question_type,
         model=request.model,
-        timeout=request.timeout
+        timeout=request.timeout,
+        subject_id=request.subject_id,
+        grade_id=request.grade_id,
+        created_by=current_user.get("user_id"),
     )
 
-    return {
-        "message": f"Question generation completed for {results['completed']} standards",
-        "standards_matched": len(standards),
-        "standards_completed": results["completed"],
-        "standards_failed": results["failed"],
-        "questions_created": results["questions_created"],
-        "errors": results["errors"] if results["errors"] else None
-    }
+    # Start in background
+    background_tasks.add_task(
+        QuestionGenerationJobService.run_job,
+        job_id=job.id,
+        question_type=request.question_type,
+        model=request.model,
+        timeout=request.timeout,
+    )
+
+    return job
+
+
+# ==================== Async Generation Jobs ====================
+
+@router.post("/generation-jobs", response_model=GenerationJobResponse, status_code=status.HTTP_201_CREATED)
+def create_generation_job(
+    request: GenerationJobCreateRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Create an async generation job and start it in the background.
+
+    Returns immediately with the job details. The job runs in a background
+    task so the admin gets a job ID to poll for progress.
+    """
+    service = QuestionGenerationJobService(db)
+
+    job = service.create_job(
+        standard_ids=request.standard_ids,
+        questions_per_standard=request.questions_per_standard,
+        question_type=request.question_type,
+        model=request.model,
+        timeout=request.timeout,
+        subject_id=request.subject_id,
+        grade_id=request.grade_id,
+        created_by=current_user.get("user_id"),
+    )
+
+    # Start background execution
+    background_tasks.add_task(
+        QuestionGenerationJobService.run_job,
+        job_id=job.id,
+        question_type=request.question_type,
+        model=request.model,
+        timeout=request.timeout,
+    )
+
+    return job
+
+
+@router.get("/generation-jobs", response_model=List[GenerationJobResponse])
+def list_generation_jobs(
+    status: Optional[str] = Query(None, description="Filter by job status"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """List generation jobs ordered by newest first."""
+    service = QuestionGenerationJobService(db)
+    jobs = service.get_jobs(status=status, skip=skip, limit=limit)
+    return jobs
+
+
+@router.get("/generation-jobs/{job_id}", response_model=GenerationJobDetailResponse)
+def get_generation_job(
+    job_id: int,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Get a single generation job with per-standard progress details."""
+    service = QuestionGenerationJobService(db)
+    job = service.get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Generation job {job_id} not found"
+        )
+    return job
+
+
+@router.get("/generation-jobs/{job_id}/progress")
+async def job_progress_stream(
+    job_id: int,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Server-Sent Events stream for real-time job progress.
+
+    Yields JSON events every 2 seconds while the job is pending or running.
+    Automatically closes when the job reaches a terminal state
+    (completed, failed, cancelled).
+    """
+    service = QuestionGenerationJobService(db)
+
+    job = service.get_job(job_id)
+    if not job:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Generation job {job_id} not found"
+        )
+
+    async def event_generator() -> AsyncIterator[str]:
+        terminal = {"completed", "failed", "cancelled"}
+        while True:
+            fresh_db = next(get_db())
+            try:
+                fresh_service = QuestionGenerationJobService(fresh_db)
+                current = fresh_service.get_job(job_id)
+                if not current:
+                    payload = json.dumps({"error": "Job not found"})
+                    yield f"event: error\ndata: {payload}\n\n"
+                    break
+
+                payload = json.dumps({
+                    "job_id": current.id,
+                    "status": current.status,
+                    "total_standards": current.total_standards,
+                    "completed_standards": current.completed_standards,
+                    "failed_standards": current.failed_standards,
+                    "questions_created": current.questions_created,
+                    "errors": current.errors or [],
+                    "started_at": current.started_at.isoformat() if current.started_at else None,
+                    "completed_at": current.completed_at.isoformat() if current.completed_at else None,
+                    "standards": [
+                        {
+                            "standard_id": js.standard_id,
+                            "status": js.status,
+                            "questions_created": js.questions_created,
+                            "error": js.error,
+                        }
+                        for js in current.job_standards
+                    ] if current.job_standards else [],
+                })
+                yield f"data: {payload}\n\n"
+
+                if current.status in terminal:
+                    break
+
+                await asyncio.sleep(2)
+            finally:
+                fresh_db.close()
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.delete("/generation-jobs/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
+def cancel_generation_job(
+    job_id: int,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Cancel a pending or running generation job."""
+    service = QuestionGenerationJobService(db)
+    try:
+        job = service.cancel_job(job_id)
+        if not job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Generation job {job_id} not found"
+            )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    return None
+
+
+@router.post("/generation-jobs/{job_id}/retry", response_model=GenerationJobResponse)
+def retry_failed_standards(
+    job_id: int,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db)
+):
+    """Create a new job retrying only the failed standards from a previous job."""
+    service = QuestionGenerationJobService(db)
+    try:
+        original_job = service.get_job(job_id)
+        if not original_job:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Generation job {job_id} not found"
+            )
+
+        new_job = service.retry_failed_standards(job_id)
+
+        # Start the new job in the background using stored params
+        background_tasks.add_task(
+            QuestionGenerationJobService.run_job,
+            job_id=new_job.id,
+            question_type=new_job.question_type or "multiple_choice",
+            model=new_job.model,
+            timeout=new_job.timeout or 300,
+        )
+
+        return new_job
+
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 
 # ==================== Question Insights ====================
