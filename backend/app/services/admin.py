@@ -113,10 +113,16 @@ class AdminService:
 
         if standard_id:
             query = query.filter(Question.standard_id == standard_id)
-        if domain_id:
-            query = query.join(Standard).filter(Standard.domain_id == domain_id)
-        if grade_id:
-            query = query.join(Standard).filter(Standard.grade_id == grade_id)
+
+        # Join standards table only once, even if both domain_id and grade_id are provided
+        needs_standard_join = domain_id is not None or grade_id is not None
+        if needs_standard_join:
+            query = query.join(Standard)
+            if domain_id:
+                query = query.filter(Standard.domain_id == domain_id)
+            if grade_id:
+                query = query.filter(Standard.grade_id == grade_id)
+
         if is_active is not None:
             query = query.filter(Question.is_active == is_active)
 
@@ -168,10 +174,16 @@ class AdminService:
         query = self.db.query(Question)
         if standard_id:
             query = query.filter(Question.standard_id == standard_id)
-        if domain_id:
-            query = query.join(Standard).filter(Standard.domain_id == domain_id)
-        if grade_id:
-            query = query.join(Standard).filter(Standard.grade_id == grade_id)
+
+        # Join standards table only once
+        needs_standard_join = domain_id is not None or grade_id is not None
+        if needs_standard_join:
+            query = query.join(Standard)
+            if domain_id:
+                query = query.filter(Standard.domain_id == domain_id)
+            if grade_id:
+                query = query.filter(Standard.grade_id == grade_id)
+
         if is_active is not None:
             query = query.filter(Question.is_active == is_active)
 
