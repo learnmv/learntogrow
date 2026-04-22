@@ -100,6 +100,21 @@ CREATE TRIGGER update_questions_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
+-- GeoGebra applet command reference data
+CREATE TABLE IF NOT EXISTS geogebra (
+    id SERIAL PRIMARY KEY,
+    applet_type VARCHAR(20) UNIQUE NOT NULL,
+    valid_command_template TEXT[] NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TRIGGER update_geogebra_updated_at
+    BEFORE UPDATE ON geogebra
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
 -- ============================================
 -- Layer 4: Users
 -- ============================================
