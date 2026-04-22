@@ -24,7 +24,29 @@ async function init() {
   try {
     await loadConfig()
   } catch (error) {
-    console.error('Failed to load configuration, using fallback:', error)
+    console.error('Failed to load configuration:', error)
+    createRoot(document.getElementById('root')!).render(
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="text-center max-w-md">
+          <h1 className="text-2xl font-display font-bold text-red-600 mb-4">
+            Configuration Error
+          </h1>
+          <p className="text-text-muted mb-2">
+            The application failed to load its runtime configuration.
+          </p>
+          <p className="text-sm text-text-muted/70">
+            {error instanceof Error ? error.message : String(error)}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-6 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-semibold hover:bg-sage-700 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>,
+    )
+    return
   }
 
   createRoot(document.getElementById('root')!).render(

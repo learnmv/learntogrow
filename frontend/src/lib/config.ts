@@ -13,22 +13,8 @@ export interface RuntimeConfig {
   }
 }
 
-// Fallback config used when fetch fails or before load
-const FALLBACK_CONFIG: RuntimeConfig = {
-  apiUrl: 'http://10.0.0.131:30800/api/v1',
-  appName: 'LearnToGrow',
-  environment: 'production',
-  features: {
-    enableDebug: false,
-    showDebugInfo: false
-  },
-  defaults: {
-    questionType: 'multiple_choice',
-    difficulty: 0.5
-  }
-}
-
 let runtimeConfig: RuntimeConfig | null = null
+let configError: Error | null = null
 let configPromise: Promise<RuntimeConfig> | null = null
 
 /**
@@ -39,6 +25,10 @@ export async function loadConfig(): Promise<RuntimeConfig> {
   // Return cached config if already loaded
   if (runtimeConfig) {
     return runtimeConfig
+  }
+  // Return prior error without retrying indefinitely
+  if (configError) {
+    throw configError
   }
 
   // Deduplicate concurrent calls
@@ -60,18 +50,20 @@ async function fetchConfig(): Promise<RuntimeConfig> {
     return config
   } catch (error) {
     console.error('Failed to load runtime config:', error)
-    // Use fallback on error
-    runtimeConfig = FALLBACK_CONFIG
-    return FALLBACK_CONFIG
+    configError = error instanceof Error ? error : new Error(String(error))
+    throw configError
   }
 }
 
 /**
  * Get the current configuration.
- * Returns fallback config if loadConfig() hasn't been called yet.
+ * Throws if config has not loaded successfully.
  */
 export function getConfig(): RuntimeConfig {
-  return runtimeConfig ?? FALLBACK_CONFIG
+  if (!runtimeConfig) {
+    throw new Error('Runtime configuration not loaded. Ensure loadConfig() completed successfully.')
+  }
+  return runtimeConfig
 }
 
 // Convenience getters
