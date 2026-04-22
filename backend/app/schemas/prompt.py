@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class PromptResponse(BaseModel):
@@ -22,6 +22,18 @@ class PromptUpdate(BaseModel):
     """Request schema for updating a prompt template."""
     content: str
     description: Optional[str] = None
+
+    @field_validator("content")
+    @classmethod
+    def strip_content(cls, v: str) -> str:
+        """Trim outer whitespace and right-strip each line."""
+        return "\n".join(line.rstrip() for line in v.strip().splitlines())
+
+    @field_validator("description")
+    @classmethod
+    def strip_description(cls, v: Optional[str]) -> Optional[str]:
+        """Trim description if provided."""
+        return v.strip() if v is not None else None
 
 
 class PromptPlaceholder(BaseModel):

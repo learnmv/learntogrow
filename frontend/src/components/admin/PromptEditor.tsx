@@ -50,12 +50,20 @@ export function PromptEditor() {
   async function saveEdit() {
     if (!editingPrompt) return;
 
+    // Clean whitespace before sending to API
+    const cleanedContent = editContent
+      .split('\n')
+      .map((l) => l.trimEnd())
+      .join('\n')
+      .trim();
+    const cleanedDescription = editDescription.trim();
+
     try {
       setSaving(true);
       const updated = await updatePrompt(
         editingPrompt.name,
-        editContent,
-        editDescription || undefined
+        cleanedContent,
+        cleanedDescription || undefined
       );
       setPrompts((prev) =>
         prev.map((p) => (p.name === updated.name ? updated : p))
