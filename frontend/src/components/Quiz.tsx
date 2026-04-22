@@ -175,11 +175,10 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
     }
   }, [standards, currentIndex, adaptive, gradeId])
 
-  // Generate question when currentIndex changes
+  // Generate question when dependencies change
   useEffect(() => {
     loadQuestion()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentIndex, adaptive, gradeId, subjectId])
+  }, [loadQuestion])
 
   const handlePrevious = () => {
     if (adaptive) return // No previous in adaptive mode
