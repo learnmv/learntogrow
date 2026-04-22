@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 
-from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, QuizAttempt, Domain, Grade, DomainProgress
+from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, QuizAttempt, Domain, Grade, DomainProgress, AnsweredQuestion
 from app.schemas.admin import UserCreateAdmin
 from app.schemas.questions import QuestionEditRequest
 from app.services.auth import AuthService
