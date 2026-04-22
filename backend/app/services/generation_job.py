@@ -194,59 +194,59 @@ class QuestionGenerationJobService:
         finally:
             db.close()
 
-def _run_standard_worker(
-    job_std_id: int,
-    question_type: str,
-    model: Optional[str],
-    timeout: int,
-) -> Tuple[int, int, Optional[str]]:
-    """Run generation for a single standard in its own thread + DB session.
+    @staticmethod
+    def _run_standard_worker(
+        job_std_id: int,
+        question_type: str,
+        model: Optional[str],
+        timeout: int,
+    ) -> Tuple[int, int, Optional[str]]:
+        """Run generation for a single standard in its own thread + DB session.
 
-    Returns (standard_id, questions_created, error_or_none).
-    """
-    db = SessionLocal()
-    try:
-        job_std = db.query(GenerationJobStandard).get(job_std_id)
-        if not job_std:
-            return (0, 0, "Job standard not found")
-
-        job_std.status = JobStandardStatus.RUNNING.value
-        job_std.started_at = datetime.utcnow()
-        db.commit()
-
-        service = QuestionGenerationJobService(db)
-        question_service = QuestionService(db)
-
-        created = service._generate_for_standard(
-            question_service=question_service,
-            job_std=job_std,
-            question_type=question_type,
-            model=model,
-            timeout=timeout,
-        )
-
-        job_std.status = JobStandardStatus.DONE.value
-        job_std.questions_created = created
-        job_std.completed_at = datetime.utcnow()
-        db.commit()
-        return (job_std.standard_id, created, None)
-    except Exception as exc:
-        logger.error(f"Standard worker {job_std_id} failed: {exc}")
+        Returns (standard_id, questions_created, error_or_none).
+        """
+        db = SessionLocal()
         try:
-            db.rollback()
             job_std = db.query(GenerationJobStandard).get(job_std_id)
-            if job_std:
-                job_std.status = JobStandardStatus.FAILED.value
-                job_std.error = str(exc)[:1000]
-                job_std.completed_at = datetime.utcnow()
-                db.commit()
-        except Exception as inner_exc:
-            logger.exception(f"Failed to mark standard {job_std_id} as failed: {inner_exc}")
-        sid = job_std.standard_id if job_std else 0
-        return (sid, 0, str(exc))
-    finally:
-        db.close()
+            if not job_std:
+                return (0, 0, "Job standard not found")
 
+            job_std.status = JobStandardStatus.RUNNING.value
+            job_std.started_at = datetime.utcnow()
+            db.commit()
+
+            service = QuestionGenerationJobService(db)
+            question_service = QuestionService(db)
+
+            created = service._generate_for_standard(
+                question_service=question_service,
+                job_std=job_std,
+                question_type=question_type,
+                model=model,
+                timeout=timeout,
+            )
+
+            job_std.status = JobStandardStatus.DONE.value
+            job_std.questions_created = created
+            job_std.completed_at = datetime.utcnow()
+            db.commit()
+            return (job_std.standard_id, created, None)
+        except Exception as exc:
+            logger.error(f"Standard worker {job_std_id} failed: {exc}")
+            try:
+                db.rollback()
+                job_std = db.query(GenerationJobStandard).get(job_std_id)
+                if job_std:
+                    job_std.status = JobStandardStatus.FAILED.value
+                    job_std.error = str(exc)[:1000]
+                    job_std.completed_at = datetime.utcnow()
+                    db.commit()
+            except Exception as inner_exc:
+                logger.exception(f"Failed to mark standard {job_std_id} as failed: {inner_exc}")
+            sid = job_std.standard_id if job_std else 0
+            return (sid, 0, str(exc))
+        finally:
+            db.close()
 
     @staticmethod
     def _do_run(
@@ -299,7 +299,7 @@ def _run_standard_worker(
             with ThreadPoolExecutor(max_workers=len(batch)) as executor:
                 futures = {
                     executor.submit(
-                        _run_standard_worker,
+                        QuestionGenerationJobService._run_standard_worker,
                         job_std.id,
                         question_type,
                         model,
