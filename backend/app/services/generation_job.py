@@ -274,8 +274,6 @@ class QuestionGenerationJobService:
         job.started_at = datetime.utcnow()
         db.commit()
 
-        job_errors: List[str] = []
-
         # Load pending standards in deterministic order
         pending = (
             db.query(GenerationJobStandard)
@@ -312,10 +310,9 @@ class QuestionGenerationJobService:
                     try:
                         standard_id, created, error = future.result()
                         if error:
-                            job_errors.append(f"Standard {standard_id}: {error}")
+                            logger.error(f"Standard {standard_id} failed: {error}")
                     except Exception as exc:
                         logger.error(f"Unexpected worker error in job {job_id}: {exc}")
-                        job_errors.append(str(exc))
 
             # Recompute aggregates from DB after each batch
             job = db.query(GenerationJob).get(job_id)
@@ -360,7 +357,13 @@ class QuestionGenerationJobService:
         job.questions_created = sum(
             (js.questions_created or 0) for js in summary
         )
-        job.errors = job_errors
+        # Build errors from per-standard DB records to avoid in-memory
+        # accumulation and any concurrent-modification race on the JSON column.
+        job.errors = [
+            f"Standard {js.standard_id}: {js.error}"
+            for js in summary
+            if js.error
+        ]
         job.status = (
             JobStatus.COMPLETED.value
             if job.failed_standards == 0
@@ -399,13 +402,24 @@ class QuestionGenerationJobService:
                 timeout=timeout,
             )
 
+            # Validate required fields before persisting so a malformed
+            # or empty LLM response fails loudly instead of silently
+            # storing empty strings.
+            question_text = question_data.get("question")
+            answer = question_data.get("answer")
+            if not question_text or not answer:
+                raise ValueError(
+                    f"Generated question missing required fields: "
+                    f"question={question_text!r}, answer={answer!r}"
+                )
+
             question = Question(
                 standard_id=job_std.standard_id,
-                question_text=question_data.get("question", ""),
+                question_text=question_text,
                 question_type=question_type,
                 options=question_data.get("options"),
-                correct_answer=question_data.get("answer", ""),
-                explanation=question_data.get("explanation", ""),
+                correct_answer=answer,
+                explanation=question_data.get("explanation"),
                 difficulty=question_data.get("difficulty", 0.5),
                 requires_diagram=question_data.get("requires_diagram", False),
                 applet_type=question_data.get("applet_type"),
