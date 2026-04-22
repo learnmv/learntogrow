@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, Loader2, CheckCircle, AlertCircle, Zap, RefreshCw,
-  ChevronDown, ChevronUp, X, Clock, Box, List,
+  ChevronDown, ChevronUp, Clock, Box, List,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -42,7 +42,8 @@ export function QuestionGenerationPanel() {
   const [questionsPerStandard, setQuestionsPerStandard] = useState(1);
   const [questionType, setQuestionType] = useState<'multiple_choice' | 'open_ended'>('multiple_choice');
   const [timeout, setTimeout] = useState(300);
-  const [maxStandards, setMaxStandards] = useState(10);
+
+  const maxStandards = 10;
 
   // -- Job state --
   const [activeJob, setActiveJob] = useState<GenerationJob | null>(null);
@@ -236,7 +237,7 @@ export function QuestionGenerationPanel() {
   }
 
   // -- Render helpers --
-  const isRunning = activeJob && !TERMINAL_STATUSES.has(activeJob.status);
+  const isRunning = !!activeJob && !TERMINAL_STATUSES.has(activeJob.status);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
