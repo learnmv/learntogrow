@@ -1,13 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Play, BarChart3, Target, Clock, CheckCircle, XCircle, Zap, TrendingUp, TrendingDown, Lightbulb } from 'lucide-react'
+import { BookOpen, Play, BarChart3, Target, Zap, TrendingUp, TrendingDown, Lightbulb } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { SubjectSelector } from '../../components/ui/SubjectSelector'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
 import { getOwnProgress } from '../../services/student'
 import { getDomainProgress, getStrengthsWeaknesses } from '../../services/adaptive'
-import type { StudentProgress, RecentAnswer } from '../../types/student'
+import type { StudentProgress } from '../../types/student'
 import type { DomainProgress, StrengthsWeaknesses } from '../../services/adaptive'
 
 export function StudentDashboard() {
@@ -241,47 +241,7 @@ export function StudentDashboard() {
         </motion.div>
       )}
 
-      {/* Recent Answers — hidden per user request */}
-      {false && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35 }}
-        >
-          <h2 className="text-lg font-display font-semibold text-text mb-4">Recent Answers</h2>
-          {!progress || progress.recent_answers.length === 0 ? (
-            <div className="bg-surface-elevated rounded-2xl p-8 shadow-sm border border-border text-center">
-              <div className="w-14 h-14 bg-sage-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                <Clock className="w-7 h-7 text-sage-600" />
-              </div>
-              <p className="text-text-muted font-body">No answers yet. Start a quiz to see your recent activity here.</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {progress.recent_answers.map((answer: RecentAnswer) => (
-                <div key={answer.question_id} className="bg-surface-elevated rounded-2xl p-4 shadow-sm border border-border flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-2 rounded-xl ${answer.is_correct ? 'bg-sage-100' : 'bg-coral-100'}`}>
-                      {answer.is_correct ? (
-                        <CheckCircle className="w-5 h-5 text-sage-600" />
-                      ) : (
-                        <XCircle className="w-5 h-5 text-coral-600" />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-display font-medium text-text">{answer.standard_code}</p>
-                      <p className="text-sm text-text-muted">{answer.is_correct ? 'Correct' : 'Incorrect'}</p>
-                    </div>
-                  </div>
-                  <span className="text-sm text-text-muted font-body">
-                    {new Date(answer.answered_at).toLocaleDateString()}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </motion.div>
-      )}
+      {/* Recent Answers section removed per user request */}
     </div>
   )
 }
