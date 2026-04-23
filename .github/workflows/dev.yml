@@ -33,25 +33,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build backend image
+      - name: Build and push backend image
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
         run: |
-          docker build --compress -t ${{ steps.vars.outputs.backend_image }} ./backend
-          docker tag ${{ steps.vars.outputs.backend_image }} ${{ steps.vars.outputs.backend_dev }}
-
-      - name: Push backend image with retry
-        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}"
+          docker build --compress -t "$IMAGE" ./backend
+          docker tag "$IMAGE" ${{ env.IMAGE_PREFIX }}-backend:dev
           for i in 1 2 3; do
-            echo "Attempt $i..."
-            docker push ${{ steps.vars.outputs.backend_image }} && docker push ${{ steps.vars.outputs.backend_dev }} && break
-            echo "Push failed, waiting 10s before retry..."
+            docker push "$IMAGE" && docker push ${{ env.IMAGE_PREFIX }}-backend:dev && break
+            echo "Push attempt $i failed, retrying in 10s..."
             sleep 10
           done
-          # If we exhausted all retries, the for loop exits normally.
-          # We must fail the step so the deploy job doesn't run with a missing image.
-          docker image inspect ${{ steps.vars.outputs.backend_image }} >/dev/null 2>>&1 || {
-            echo "ERROR: Backend image was not pushed after 3 attempts"
-            exit 1
-          }
+          docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "Backend image push failed"; exit 1; }
 
   build-frontend:
     runs-on: self-hosted
@@ -75,25 +69,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build frontend image
+      - name: Build and push frontend image
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
         run: |
-          docker build --compress -t ${{ steps.vars.outputs.frontend_image }} ./frontend
-          docker tag ${{ steps.vars.outputs.frontend_image }} ${{ steps.vars.outputs.frontend_dev }}
-
-      - name: Push frontend image with retry
-        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}"
+          docker build --compress -t "$IMAGE" ./frontend
+          docker tag "$IMAGE" ${{ env.IMAGE_PREFIX }}-frontend:dev
           for i in 1 2 3; do
-            echo "Attempt $i..."
-            docker push ${{ steps.vars.outputs.frontend_image }} && docker push ${{ steps.vars.outputs.frontend_dev }} && break
-            echo "Push failed, waiting 10s before retry..."
+            docker push "$IMAGE" && docker push ${{ env.IMAGE_PREFIX }}-frontend:dev && break
+            echo "Push attempt $i failed, retrying in 10s..."
             sleep 10
           done
-          # If we exhausted all retries, the for loop exits normally.
-          # We must fail the step so the deploy job doesn't run with a missing image.
-          docker image inspect ${{ steps.vars.outputs.frontend_image }} >/dev/null 2>>&1 || {
-            echo "ERROR: Frontend image was not pushed after 3 attempts"
-            exit 1
-          }
+          docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "Frontend image push failed"; exit 1; }
 
   deploy:
     needs: [build-backend, build-frontend]
