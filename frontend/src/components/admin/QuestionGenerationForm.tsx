@@ -218,7 +218,7 @@ export function QuestionGenerationForm({ onSuccess }: QuestionGenerationFormProp
           <label className="block text-sm font-medium text-text mb-2">Subject *</label>
           <select
             value={selectedSubject}
-            onChange={(e) => setSelectedSubject(Number(e.target.value) || '')}
+            onChange={(e) => setSelectedSubject(e.target.value === '' ? '' : Number(e.target.value))}
             className="w-full px-4 py-2 border border-border rounded-xl bg-surface focus:ring-2 focus:ring-sage-500 focus:border-transparent"
             required
           >
@@ -234,7 +234,7 @@ export function QuestionGenerationForm({ onSuccess }: QuestionGenerationFormProp
           <label className="block text-sm font-medium text-text mb-2">Grade *</label>
           <select
             value={selectedGrade}
-            onChange={(e) => setSelectedGrade(Number(e.target.value) || '')}
+            onChange={(e) => setSelectedGrade(e.target.value === '' ? '' : Number(e.target.value))}
             className="w-full px-4 py-2 border border-border rounded-xl bg-surface focus:ring-2 focus:ring-sage-500 focus:border-transparent"
             required
             disabled={!selectedSubject}

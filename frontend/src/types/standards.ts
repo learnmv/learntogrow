@@ -44,4 +44,5 @@ export interface HierarchyFilter {
   grade_id?: number
   domain_id?: number
   cluster_id?: number
+  domain_ids?: number[]
 }

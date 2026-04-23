@@ -4,10 +4,9 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 
-from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, QuizAttempt, Domain, Grade, DomainProgress
+from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, QuizAttempt, Domain, Grade, DomainProgress, AnsweredQuestion
 from app.schemas.admin import UserCreateAdmin
 from app.schemas.questions import QuestionEditRequest
-from app.services.questions import QuestionService
 from app.services.auth import AuthService
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,6 @@ class AdminService:
 
     def __init__(self, db: Session):
         self.db = db
-        self.question_service = QuestionService(db)
         self.auth_service = AuthService(db)
 
     # ==================== User Management ====================
@@ -115,10 +113,16 @@ class AdminService:
 
         if standard_id:
             query = query.filter(Question.standard_id == standard_id)
-        if domain_id:
-            query = query.join(Standard).filter(Standard.domain_id == domain_id)
-        if grade_id:
-            query = query.join(Standard).filter(Standard.grade_id == grade_id)
+
+        # Join standards table only once, even if both domain_id and grade_id are provided
+        needs_standard_join = domain_id is not None or grade_id is not None
+        if needs_standard_join:
+            query = query.join(Standard)
+            if domain_id:
+                query = query.filter(Standard.domain_id == domain_id)
+            if grade_id:
+                query = query.filter(Standard.grade_id == grade_id)
+
         if is_active is not None:
             query = query.filter(Question.is_active == is_active)
 
@@ -170,10 +174,16 @@ class AdminService:
         query = self.db.query(Question)
         if standard_id:
             query = query.filter(Question.standard_id == standard_id)
-        if domain_id:
-            query = query.join(Standard).filter(Standard.domain_id == domain_id)
-        if grade_id:
-            query = query.join(Standard).filter(Standard.grade_id == grade_id)
+
+        # Join standards table only once
+        needs_standard_join = domain_id is not None or grade_id is not None
+        if needs_standard_join:
+            query = query.join(Standard)
+            if domain_id:
+                query = query.filter(Standard.domain_id == domain_id)
+            if grade_id:
+                query = query.filter(Standard.grade_id == grade_id)
+
         if is_active is not None:
             query = query.filter(Question.is_active == is_active)
 
@@ -192,69 +202,7 @@ class AdminService:
         self.db.refresh(question)
         return question
 
-    # ==================== Question Generation ====================
-
-    def generate_questions_for_standards(
-        self,
-        standard_ids: List[int],
-        questions_per_standard: int = 1,
-        question_type: str = "multiple_choice",
-        model: Optional[str] = None,
-        timeout: int = 300
-    ) -> Dict[str, Any]:
-        """Generate questions for multiple standards."""
-        results = {
-            "total_standards": len(standard_ids),
-            "completed": 0,
-            "failed": 0,
-            "questions_created": 0,
-            "errors": []
-        }
-
-        for standard_id in standard_ids:
-            try:
-                for i in range(questions_per_standard):
-                    try:
-                        question_data = self.question_service.generate_question(
-                            standard_id=standard_id,
-                            question_type=question_type,
-                            model=model,
-                            timeout=timeout
-                        )
-
-                        # Create question record
-                        question = Question(
-                            standard_id=standard_id,
-                            question_text=question_data.get("question", ""),
-                            question_type=question_type,
-                            options=question_data.get("options"),
-                            correct_answer=question_data.get("answer", ""),
-                            explanation=question_data.get("explanation", ""),
-                            difficulty=question_data.get("difficulty", 0.5),
-                            requires_diagram=question_data.get("requires_diagram", False),
-                            applet_type=question_data.get("applet_type"),
-                            geogebra_commands=question_data.get("geogebra_commands"),
-                            applet_config=question_data.get("applet_config"),
-                            generated_by="admin",
-                            is_active=True
-                        )
-
-                        self.db.add(question)
-                        results["questions_created"] += 1
-
-                    except Exception as e:
-                        logger.error(f"Failed to generate question for standard {standard_id}: {e}")
-                        results["errors"].append(f"Standard {standard_id}: {str(e)}")
-
-                self.db.commit()
-                results["completed"] += 1
-
-            except Exception as e:
-                logger.error(f"Failed to process standard {standard_id}: {e}")
-                results["failed"] += 1
-                results["errors"].append(f"Standard {standard_id}: {str(e)}")
-
-        return results
+    # ==================== Question Generation (moved to QuestionGenerationJobService) ====================
 
     def get_standards_for_generation(
         self,

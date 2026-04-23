@@ -58,6 +58,12 @@ jobs:
             echo "Push failed, waiting 10s before retry..."
             sleep 10
           done
+          # If we exhausted all retries, the for loop exits normally.
+          # We must fail the step so the deploy job doesn't run with a missing image.
+          docker image inspect ${{ steps.vars.outputs.backend_image }} >/dev/null 2>>&1 || {
+            echo "ERROR: Backend image was not pushed after 3 attempts"
+            exit 1
+          }
 
   build-frontend:
     runs-on: self-hosted
@@ -101,6 +107,12 @@ jobs:
             echo "Push failed, waiting 10s before retry..."
             sleep 10
           done
+          # If we exhausted all retries, the for loop exits normally.
+          # We must fail the step so the deploy job doesn't run with a missing image.
+          docker image inspect ${{ steps.vars.outputs.frontend_image }} >/dev/null 2>>&1 || {
+            echo "ERROR: Frontend image was not pushed after 3 attempts"
+            exit 1
+          }
 
   deploy:
     needs: [build-backend, build-frontend]

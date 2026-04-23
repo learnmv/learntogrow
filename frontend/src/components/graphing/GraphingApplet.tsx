@@ -131,6 +131,9 @@ export function GraphingApplet({
     let timeoutId: ReturnType<typeof setTimeout> | null = null
 
     async function initApplet() {
+      // Reset command tracking for each new question/applet instance
+      executedCommandsRef.current.clear()
+
       try {
         // Load GeoGebra script
         await loadGeoGebraScript()
