@@ -33,13 +33,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./backend
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-backend:${{ steps.vars.outputs.image_tag }}
-            ${{ env.IMAGE_PREFIX }}-backend:dev
+      - name: Build and push backend image
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}"
+          docker build --compress -t "$IMAGE" ./backend
+          docker tag "$IMAGE" ${{ env.IMAGE_PREFIX }}-backend:dev
+          for i in 1 2 3; do
+            docker push "$IMAGE" && docker push ${{ env.IMAGE_PREFIX }}-backend:dev && break
+            echo "Push attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "Backend image push failed"; exit 1; }
 
   build-frontend:
     runs-on: self-hosted
@@ -63,13 +69,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: docker/build-push-action@v5
-        with:
-          context: ./frontend
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.vars.outputs.image_tag }}
-            ${{ env.IMAGE_PREFIX }}-frontend:dev
+      - name: Build and push frontend image
+        env:
+          IMAGE_TAG: ${{ steps.vars.outputs.image_tag }}
+        run: |
+          IMAGE="${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}"
+          docker build --compress -t "$IMAGE" ./frontend
+          docker tag "$IMAGE" ${{ env.IMAGE_PREFIX }}-frontend:dev
+          for i in 1 2 3; do
+            docker push "$IMAGE" && docker push ${{ env.IMAGE_PREFIX }}-frontend:dev && break
+            echo "Push attempt $i failed, retrying in 10s..."
+            sleep 10
+          done
+          docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "Frontend image push failed"; exit 1; }
 
   deploy:
     needs: [build-backend, build-frontend]
