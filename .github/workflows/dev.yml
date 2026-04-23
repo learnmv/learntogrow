@@ -2,11 +2,10 @@ name: Dev CI/CD
 
 on:
   push:
-    branches: [ dev ]
+    branches: [dev]
   workflow_dispatch:
 
 env:
-  REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/learnmv/learntogrow
 
 jobs:
@@ -18,8 +17,7 @@ jobs:
     outputs:
       image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set variables
         id: vars
@@ -28,18 +26,8 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "backend_image=${{ env.IMAGE_PREFIX }}-backend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "backend_dev=${{ env.IMAGE_PREFIX }}-backend:dev" >> $GITHUB_OUTPUT
-          echo "Building with tag: ${IMAGE_TAG}"
 
-      - name: Configure Docker daemon
-        run: |
-          sudo mkdir -p /etc/docker
-          echo '{"max-concurrent-uploads": 2, "max-concurrent-downloads": 3}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker || true
-
-      - name: Login to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -70,11 +58,8 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.vars.outputs.image_tag }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set variables
         id: vars
@@ -83,12 +68,8 @@ jobs:
           SHORT_SHA=$(git rev-parse --short HEAD)
           IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
           echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "frontend_image=${{ env.IMAGE_PREFIX }}-frontend:${IMAGE_TAG}" >> $GITHUB_OUTPUT
-          echo "frontend_dev=${{ env.IMAGE_PREFIX }}-frontend:dev" >> $GITHUB_OUTPUT
-          echo "Building with tag: ${IMAGE_TAG}"
 
-      - name: Login to GHCR
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -118,61 +99,25 @@ jobs:
     needs: [build-backend, build-frontend]
     runs-on: self-hosted
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set variables
-        id: vars
-        run: |
-          TIMESTAMP=$(date +%Y%m%d)
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          IMAGE_TAG="dev-${TIMESTAMP}-${SHORT_SHA}"
-          echo "image_tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-
       - name: Setup kubectl
         run: |
           mkdir -p ~/.kube
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > ~/.kube/config
 
-      - name: Update image tags and deploy
+      - name: Deploy
+        env:
+          TAG: ${{ needs.build-backend.outputs.image_tag }}
         run: |
-          cd k8s/overlays/dev
-          # Update image tags in kustomization (using sed since kustomize CLI not installed)
-          sed -i "s/newTag: dev/newTag: ${{ steps.vars.outputs.image_tag }}/g" kustomization.yaml
-          cat kustomization.yaml
-          # Deploy
-          kubectl apply -k .
+          kubectl set image deployment/backend backend=${{ env.IMAGE_PREFIX }}-backend:${{ env.TAG }} -n learntogrow-dev
+          kubectl set image deployment/frontend frontend=${{ env.IMAGE_PREFIX }}-frontend:${{ env.TAG }} -n learntogrow-dev
 
       - name: Wait for rollout
         run: |
           kubectl rollout status deployment/backend -n learntogrow-dev --timeout=300s
           kubectl rollout status deployment/frontend -n learntogrow-dev --timeout=300s
 
-      - name: Verify deployment
+      - name: Verify
         run: |
           echo "Deployed images:"
           kubectl get pods -n learntogrow-dev -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.containers[0].image}{"\n"}{end}'
           kubectl get pods -n learntogrow-dev
-          kubectl get svc -n learntogrow-dev
-
-  cleanup:
-    needs: deploy
-    runs-on: ubuntu-latest
-    permissions:
-      packages: write
-    steps:
-      - name: Cleanup old container images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: learntogrow-backend
-          package-type: container
-          min-versions-to-keep: 2
-          delete-only-untagged-versions: true
-
-      - name: Cleanup old frontend images
-        uses: actions/delete-package-versions@v5
-        with:
-          package-name: learntogrow-frontend
-          package-type: container
-          min-versions-to-keep: 2
-          delete-only-untagged-versions: true
