@@ -66,7 +66,7 @@ interface GGBAppletInstance {
 
 declare global {
   interface Window {
-    GGBApplet?: new (parameters: Record<string, unknown>) => GGBAppletInstance
+    GGBApplet?: new (parameters: Record<string, unknown>, view5d?: boolean) => GGBAppletInstance
   }
 }
 
