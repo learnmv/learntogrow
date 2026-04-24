@@ -123,27 +123,32 @@ export function GeoGebraApplet({
   const containerRef = useRef<HTMLDivElement>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [apiReady, setApiReady] = useState(false)
 
-  // Stable ID so StrictMode doesn't create duplicate containers
-  const stableIdRef = useRef(`ggb-${appletType}-${Math.random().toString(36).slice(2, 9)}`)
-  const containerId = stableIdRef.current
+  // Stable container ID for the life of this component instance
+  const containerIdRef = useRef(`ggb-${Math.random().toString(36).slice(2, 9)}`)
+  const containerId = containerIdRef.current
 
-  // Track which commands have been sent to the current applet instance
-  const executedCommandsRef = useRef<Set<string>>(new Set())
-  // Hold the applet instance so we can reuse it when only commands change
-  const appletInstanceRef = useRef<GGBAppletInstance | null>(null)
+  // Refs to the live applet and its API — survive re-renders
   const apiRef = useRef<GGBAppletApi | null>(null)
+  const appletRef = useRef<GGBAppletInstance | null>(null)
 
+  // Track which commands have already been run so we don't duplicate
+  const executedCommandsRef = useRef<Set<string>>(new Set())
+
+  // ── Effect 1: create / destroy the applet (structural props only) ──
   useEffect(() => {
     let isMounted = true
-    let api: GGBAppletApi | null = null
     let checkReady: ReturnType<typeof setInterval> | null = null
     let timeoutId: ReturnType<typeof setTimeout> | null = null
 
     async function init() {
-      executedCommandsRef.current.clear()
       setIsLoading(true)
+      setApiReady(false)
       setError(null)
+      apiRef.current = null
+      appletRef.current = null
+      executedCommandsRef.current.clear()
 
       try {
         await loadGeoGebraScript()
@@ -167,12 +172,13 @@ export function GeoGebraApplet({
         }
 
         const applet = new window.GGBApplet(parameters, true)
-        appletInstanceRef.current = applet
+        appletRef.current = applet
 
         const el = document.getElementById(containerId)
         if (el) el.innerHTML = ''
         applet.inject(containerId)
 
+        // Poll until the API becomes available
         checkReady = setInterval(() => {
           if (!isMounted) { if (checkReady) clearInterval(checkReady); return }
 
@@ -180,38 +186,20 @@ export function GeoGebraApplet({
             const a = applet.getAppletObject()
             if (a && typeof a.evalCommand === 'function') {
               if (checkReady) clearInterval(checkReady)
-              api = a
               apiRef.current = a
-
-              if (commands.length > 0) {
-                const newCommands = commands.filter((c) => !executedCommandsRef.current.has(c))
-                if (newCommands.length > 0) {
-                  const results: { command: string; success: boolean }[] = []
-                  newCommands.forEach((cmd) => {
-                    try {
-                      const ok = a.evalCommand(cmd)
-                      results.push({ command: cmd, success: !!ok })
-                      executedCommandsRef.current.add(cmd)
-                    } catch (err) {
-                      console.warn('GeoGebra command failed:', cmd, err)
-                      results.push({ command: cmd, success: false })
-                      executedCommandsRef.current.add(cmd)
-                    }
-                  })
-                  if (onCommandResults && results.length > 0) onCommandResults(results)
-                }
+              if (isMounted) {
+                setApiReady(true)
+                setIsLoading(false)
               }
-
-              if (isMounted) setIsLoading(false)
             }
           } catch {
-            // API not ready yet, keep polling
+            // still loading
           }
         }, 100)
 
         timeoutId = setTimeout(() => {
           if (checkReady) clearInterval(checkReady)
-          if (isMounted && !api) {
+          if (isMounted && !apiRef.current) {
             setError(`GeoGebra ${appletType} applet failed to initialize. Please refresh.`)
             setIsLoading(false)
           }
@@ -231,18 +219,43 @@ export function GeoGebraApplet({
       if (checkReady) clearInterval(checkReady)
       if (timeoutId) clearTimeout(timeoutId)
 
-      // Best-effort cleanup: remove injected DOM and attempt reset
       const el = document.getElementById(containerId)
       if (el) el.innerHTML = ''
-      try {
-        apiRef.current?.reset()
-      } catch {
-        // ignore
-      }
+      try { apiRef.current?.reset() } catch { /* ignore */ }
       apiRef.current = null
-      appletInstanceRef.current = null
+      appletRef.current = null
     }
-  }, [appletType, height, width, containerId, config, commands, onCommandResults])
+  }, [appletType, height, width, containerId, config])
+
+  // ── Effect 2: execute commands whenever they change or API becomes ready ──
+  useEffect(() => {
+    if (!apiReady || !apiRef.current) return
+
+    const api = apiRef.current
+
+    // Clear canvas and previous command tracking
+    api.reset()
+    executedCommandsRef.current.clear()
+
+    if (commands.length === 0) return
+
+    const results: { command: string; success: boolean }[] = []
+    commands.forEach((cmd) => {
+      try {
+        const ok = api.evalCommand(cmd)
+        results.push({ command: cmd, success: !!ok })
+        executedCommandsRef.current.add(cmd)
+      } catch (err) {
+        console.warn('GeoGebra command failed:', cmd, err)
+        results.push({ command: cmd, success: false })
+        executedCommandsRef.current.add(cmd)
+      }
+    })
+
+    if (onCommandResults && results.length > 0) {
+      onCommandResults(results)
+    }
+  }, [apiReady, commands, onCommandResults])
 
   if (error) {
     return (
@@ -264,7 +277,9 @@ export function GeoGebraApplet({
         >
           <div className="text-center">
             <div className="w-8 h-8 border-3 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-2" />
-            <p className="text-text-muted font-display text-sm">Loading {appletType === '3d' ? '3D calculator' : `${appletType} tool`}...</p>
+            <p className="text-text-muted font-display text-sm">
+              Loading {appletType === '3d' ? '3D calculator' : `${appletType} tool`}...
+            </p>
           </div>
         </div>
       )}
