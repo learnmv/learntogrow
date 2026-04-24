@@ -14,6 +14,7 @@ interface QuizProps {
   subjectId: string
   gradeId: string
   onExit: () => void
+  standards?: Standard[]  // Pre-loaded standards (for mistakes mode)
 }
 
 // Storage key for quiz progress
@@ -28,7 +29,7 @@ interface SavedProgress {
   timestamp: number
 }
 
-export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
+export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: QuizProps) {
   const { isAuthenticated } = useAuth()
   const [standards, setStandards] = useState<Standard[]>([])
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -41,8 +42,14 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
   const [retryCount, setRetryCount] = useState(0)
   const [answers, setAnswers] = useState<Record<number, { selected: string; correct: boolean }>>({})
 
-  // Fetch standards on mount
+  // Fetch standards on mount (only if not pre-loaded)
   useEffect(() => {
+    if (standardsProp && standardsProp.length > 0) {
+      setStandards(standardsProp)
+      setLoading(false)
+      return
+    }
+
     async function loadStandards() {
       try {
         const standardsList = await fetchStandards({
@@ -58,7 +65,7 @@ export function Quiz({ subjectId, gradeId, onExit }: QuizProps) {
     }
 
     loadStandards()
-  }, [subjectId, gradeId])
+  }, [subjectId, gradeId, standardsProp])
 
   // Load progress from localStorage on mount
   useEffect(() => {
