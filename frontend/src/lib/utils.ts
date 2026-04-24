@@ -11,7 +11,7 @@ export function cn(...inputs: (string | undefined | null | false)[]): string {
 const MATH_WHITELIST = new Set([
   'sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'log', 'ln', 'exp',
   'lim', 'max', 'min', 'sum', 'int', 'frac', 'sqrt', 'left', 'right',
-  'over', 'cdot', 'times', 'pm', 'mp', 'neq', 'le', 'ge', 'lt', 'gt',
+  'over', 'cdot', 'times', 'pm', 'mp', 'neq', 'le', 'ge', 'lt', 'gt', 'leq', 'geq', 'cup', 'cap', 'vee', 'wedge',
   'in', 'not', 'and', 'pi', 'theta', 'alpha', 'beta', 'gamma', 'delta',
   'epsilon', 'lambda', 'mu', 'sigma', 'omega', 'phi', 'varphi', 'tau',
   'kappa', 'zeta', 'eta', 'xi', 'psi', 'rho', 'nu', 'chi', 'iota',
@@ -29,7 +29,7 @@ const MATH_WHITELIST = new Set([
   'null', 'col', 'row', 'span', 'trace', 'bmod', 'pmod', 'pod', 'arg',
   'cosh', 'sinh', 'tanh', 'coth', 'sech', 'csch', 'arcsin', 'arccos',
   'arctan', 'arcsec', 'arccsc', 'arccot', 'arsinh', 'arcosh', 'artanh',
-  'arcsch', 'arcoth', 'arsech', 'Re', 'Im', 'deg', 'det',
+  'arcsch', 'arcoth', 'arsech', 'Re', 'Im', 'deg', 'det', 'div', 'mod',
 ])
 
 function isValidMath(candidate: string): boolean {
