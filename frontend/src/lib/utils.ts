@@ -8,14 +8,95 @@ export function cn(...inputs: (string | undefined | null | false)[]): string {
   return inputs.filter(Boolean).join(' ')
 }
 
-export function renderMathToHtml(text: string): string {
-  return text.replace(/\$([^$]+)\$/g, (_, math) => {
-    try {
-      return katex.renderToString(math, { throwOnError: false })
-    } catch {
-      return math
+const MATH_WHITELIST = new Set([
+  'sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'log', 'ln', 'exp',
+  'lim', 'max', 'min', 'sum', 'int', 'frac', 'sqrt', 'left', 'right',
+  'over', 'cdot', 'times', 'pm', 'mp', 'neq', 'le', 'ge', 'lt', 'gt',
+  'in', 'not', 'and', 'pi', 'theta', 'alpha', 'beta', 'gamma', 'delta',
+  'epsilon', 'lambda', 'mu', 'sigma', 'omega', 'phi', 'varphi', 'tau',
+  'kappa', 'zeta', 'eta', 'xi', 'psi', 'rho', 'nu', 'chi', 'iota',
+  'circ', 'deg', 'text', 'mbox', 'mathrm', 'mathbf', 'mathit', 'root',
+  'tfrac', 'dfrac', 'binom', 'overline', 'underline', 'widetilde', 'widehat',
+  'vec', 'bar', 'dot', 'ddot', 'hat', 'tilde', 'iint', 'iiint', 'oint',
+  'prod', 'bigcup', 'bigcap', 'bigvee', 'bigwedge', 'infty', 'partial',
+  'nabla', 'forall', 'exists', 'neg', 'lor', 'land', 'implies', 'iff',
+  'to', 'mapsto', 'gets', 'mid', 'parallel', 'approx', 'sim',
+  'cong', 'equiv', 'propto', 'perp', 'angle', 'triangle', 'square',
+  'cdots', 'ldots', 'vdots', 'ddots', 'dots', 'quad', 'qquad', 'space',
+  'operatorname', 'textrm', 'texttt', 'textsf', 'textbf', 'textit', 'emph',
+  'mathop', 'bigl', 'bigr', 'Bigl', 'Bigr', 'biggl', 'biggr', 'Biggl',
+  'Biggr', 'gcd', 'lcm', 'proj', 'det', 'dim', 'ker', 'hom', 'rank',
+  'null', 'col', 'row', 'span', 'trace', 'bmod', 'pmod', 'pod', 'arg',
+  'cosh', 'sinh', 'tanh', 'coth', 'sech', 'csch', 'arcsin', 'arccos',
+  'arctan', 'arcsec', 'arccsc', 'arccot', 'arsinh', 'arcosh', 'artanh',
+  'arcsch', 'arcoth', 'arsech', 'Re', 'Im', 'deg', 'det',
+])
+
+function isValidMath(candidate: string): boolean {
+  // Reject suspiciously long spans
+  if (candidate.length > 300) return false
+
+  // Reject anything that crosses a sentence boundary
+  if (/[.!?]\s/.test(candidate)) return false
+
+  // Reject prose words (3+ lowercase letters not in the math whitelist)
+  const words = candidate.match(/[a-z]{3,}/g)
+  if (words) {
+    for (const w of words) {
+      if (!MATH_WHITELIST.has(w)) return false
     }
+  }
+
+  return true
+}
+
+export function renderMathToHtml(text: string): string {
+  // Protect escaped dollar signs
+  const escapes: string[] = []
+  text = text.replace(/\\\$/g, () => {
+    escapes.push('$')
+    return `[[ESCAPED_${escapes.length - 1}]]`
   })
+
+  let result = ''
+  let i = 0
+
+  while (i < text.length) {
+    if (text[i] !== '$') {
+      result += text[i]
+      i++
+      continue
+    }
+
+    const j = text.indexOf('$', i + 1)
+    if (j === -1) {
+      // No closing delimiter — treat as literal
+      result += '$'
+      i++
+      continue
+    }
+
+    const candidate = text.slice(i + 1, j)
+
+    if (isValidMath(candidate)) {
+      try {
+        result += katex.renderToString(candidate, { throwOnError: false })
+      } catch {
+        result += text.slice(i, j + 1)
+      }
+      i = j + 1
+    } else {
+      // Not math — emit the opening $ literally and move forward
+      // so the closing $ can still start a real math block later
+      result += '$'
+      i++
+    }
+  }
+
+  // Restore escaped dollars
+  result = result.replace(/\[\[ESCAPED_(\d+)\]\]/g, (_, idx) => escapes[parseInt(idx)])
+
+  return result
 }
 
 /**
