@@ -4,7 +4,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 
-from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, QuizAttempt, Domain, Grade, AnsweredQuestion
+from app.models import User, UserRole, Question, Standard, ParentStudentLink, LinkStatus, Domain, Grade, AnsweredQuestion
 from app.schemas.admin import UserCreateAdmin
 from app.schemas.questions import QuestionEditRequest
 from app.services.auth import AuthService
@@ -76,14 +76,14 @@ class AdminService:
         total_parents = self.db.query(func.count(User.id)).filter(User.role == UserRole.PARENT).scalar()
         total_admins = self.db.query(func.count(User.id)).filter(User.role == UserRole.ADMIN).scalar()
         total_questions = self.db.query(func.count(Question.id)).scalar()
-        total_attempts = self.db.query(func.count(QuizAttempt.id)).scalar()
         pending_links = self.db.query(func.count(ParentStudentLink.id)).filter(
             ParentStudentLink.status == LinkStatus.PENDING
         ).scalar()
 
-        # Recent attempts (last 7 days)
-        recent_attempts = self.db.query(func.count(QuizAttempt.id)).filter(
-            QuizAttempt.completed_at >= datetime.utcnow().replace(hour=0, minute=0, second=0)
+        # Total answered questions as a proxy for quiz activity
+        total_answered = self.db.query(func.count(AnsweredQuestion.id)).scalar()
+        recent_answered = self.db.query(func.count(AnsweredQuestion.id)).filter(
+            AnsweredQuestion.answered_at >= datetime.utcnow().replace(hour=0, minute=0, second=0)
         ).scalar()
 
         return {
@@ -92,9 +92,9 @@ class AdminService:
             "total_parents": total_parents,
             "total_admins": total_admins,
             "total_questions": total_questions,
-            "total_quiz_attempts": total_attempts,
+            "total_quiz_attempts": total_answered,
             "pending_parent_links": pending_links,
-            "recent_quiz_attempts": recent_attempts
+            "recent_quiz_attempts": recent_answered,
         }
 
     # ==================== Question Management ====================

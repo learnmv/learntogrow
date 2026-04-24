@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from app.models import User, UserRole, PasswordResetToken, ParentStudentLink, LinkStatus, QuizAttempt
+from app.models import User, UserRole, PasswordResetToken, ParentStudentLink, LinkStatus
 from app.schemas.auth import UserCreate, UserCreateStudent, UserCreateParent, PasswordResetConfirm
 
 

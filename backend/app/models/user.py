@@ -35,7 +35,6 @@ class User(Base):
     updated_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    quiz_attempts = relationship("QuizAttempt", back_populates="student")
     parent_links = relationship(
         "ParentStudentLink",
         foreign_keys="ParentStudentLink.parent_id",
@@ -106,30 +105,6 @@ class ParentStudentLink(Base):
 
     def __repr__(self):
         return f"<ParentStudentLink(parent_id={self.parent_id}, student_id={self.student_id}, status={self.status})>"
-
-
-class QuizAttempt(Base):
-    """Quiz attempts tracked per student."""
-    __tablename__ = "quiz_attempts"
-
-    id = Column(Integer, primary_key=True)
-    student_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    standard_id = Column(Integer, ForeignKey("standards.id", ondelete="CASCADE"), nullable=False)
-    question_id = Column(Integer, ForeignKey("questions.id", ondelete="SET NULL"))
-    answers = Column(Text)  # JSON string: {question_id: {selected: "A", correct: true}}
-    score = Column(Integer)
-    total_questions = Column(Integer)
-    time_spent_seconds = Column(Integer)
-    completed_at = Column(TIMESTAMP, server_default=func.now())
-    created_at = Column(TIMESTAMP, server_default=func.now())
-
-    # Relationships
-    student = relationship("User", back_populates="quiz_attempts")
-    standard = relationship("Standard", backref="quiz_attempts")
-    question = relationship("Question", backref="quiz_attempts")
-
-    def __repr__(self):
-        return f"<QuizAttempt(student_id={self.student_id}, standard_id={self.standard_id}, score={self.score})>"
 
 
 class AnsweredQuestion(Base):
