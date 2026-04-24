@@ -69,7 +69,7 @@ function LandingPage() {
         <div className="flex flex-col items-center gap-6">
           <div className="text-center max-w-md">
             <p className="text-text-muted font-body">
-              Create a free account to track your progress, get adaptive questions, and see your strengths and weaknesses.
+              Create a free account to track your progress and see your strengths and weaknesses.
             </p>
           </div>
           <div className="flex gap-3">

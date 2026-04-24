@@ -7,7 +7,6 @@ export function QuizPage() {
 
   const subjectId = searchParams.get('subjectId')
   const gradeId = searchParams.get('gradeId')
-  const adaptive = searchParams.get('adaptive') === '1'
 
   if (!subjectId || !gradeId) {
     return (
@@ -28,7 +27,6 @@ export function QuizPage() {
       subjectId={subjectId}
       gradeId={gradeId}
       onExit={() => navigate('/student')}
-      adaptive={adaptive}
     />
   )
 }
