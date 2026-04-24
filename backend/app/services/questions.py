@@ -22,24 +22,6 @@ BACKOFF_BASE = 2
 # Pre-compile regex for option cleaning
 _OPTION_LABEL_PATTERN = re.compile(r'^[A-Da-d][\.)\s\-]+\s*')
 
-# Default GeoGebra commands for common standards.
-# These are passed to evalCommand() which accepts anything you can type
-# into the GeoGebra input bar.  View settings (axes, grid, bounds)
-# should NOT be here — they belong in applet_config/parameters.
-DEFAULT_GEOGEBRA_COMMANDS = {
-    "6.NS.5": ["A = (-4, 0)", "B = (4, 0)"],
-    "6.NS.6": ["P = (3, 2)"],
-    "6.NS.7": ["A = (-5, 0)", "B = (-2, 0)", "C = (1, 0)", "D = (4, 0)"],
-    "6.NS.8": ["A = (-4, 3)", "B = (5, 3)", "Segment(A, B)"],
-    "6.G.1": ["A = (0, 0)", "B = (4, 0)", "C = (2, 3)", "Polygon(A, B, C)"],
-    "6.G.2": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)"],
-    "6.G.3": ["A = (0, 0)", "B = (3, 0)", "C = (3, 2)", "D = (0, 2)", "Polygon(A, B, C, D)", "E = (1.5, 1)"],
-    "6.G.4": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)"],
-    "6.SP.4": ["A = (1, 2)", "B = (2, 4)", "C = (3, 3)", "D = (4, 5)", "E = (5, 2)", "List1 = {A, B, C, D, E}", "DotPlot(List1)"],
-    "6.SP.5": ["A = (1, 2)", "B = (2, 5)", "C = (3, 3)", "D = (4, 7)", "E = (5, 4)", "List1 = {A, B, C, D, E}", "BoxPlot(List1)"],
-}
-
-
 def validate_question_data(data: dict, standard_code: str) -> dict:
     """Validate and clean question data from LLM.
 
@@ -75,6 +57,14 @@ def validate_question_data(data: dict, standard_code: str) -> dict:
                     errors.append(f"Option {chr(65+i)} is empty")
                 elif str(opt).strip() in ["A", "B", "C", "D"]:
                     errors.append(f"Option {chr(65+i)} is just a letter label")
+
+    # Validate GeoGebra commands for diagram questions
+    if data.get("requires_diagram"):
+        commands = data.get("geogebra_commands")
+        if not commands or not isinstance(commands, list) or len(commands) == 0:
+            errors.append("GeoGebra commands are required for diagram questions but were missing or empty")
+        elif not all(isinstance(cmd, str) and cmd.strip() for cmd in commands):
+            errors.append("GeoGebra commands must be a list of non-empty strings")
 
     # Check answer exists
     if not data.get("answer"):
@@ -243,17 +233,12 @@ class QuestionService:
                 # Validate the question data
                 validate_question_data(question_data, standard.code)
 
-                # Handle GeoGebra commands for diagram questions
+                # Handle GeoGebra commands for diagram questions — no fallback.
                 if standard.requires_diagram:
                     if not question_data.get("geogebra_commands"):
-                        # Use default commands for this standard if available
-                        default_commands = DEFAULT_GEOGEBRA_COMMANDS.get(standard.code)
-                        if default_commands:
-                            logger.info(f"Using default GeoGebra commands for {standard.code}")
-                            question_data["geogebra_commands"] = default_commands
-                        else:
-                            logger.warning(f"No GeoGebra commands generated for diagram question {standard.code}")
-                            question_data["geogebra_commands"] = []
+                        raise ValueError(
+                            f"Diagram question for {standard.code} is missing required geogebra_commands"
+                        )
 
                     # Ensure applet_config exists
                     if "applet_config" not in question_data:
