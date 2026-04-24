@@ -404,7 +404,7 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
               />
 
               {/* GeoGebra Applet */}
-              {currentQuestion.applet_type && currentQuestion.applet_type !== '' && (
+              {currentQuestion.applet_type && (
                 <div className="mb-6">
                   <GeoGebraApplet
                     appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
