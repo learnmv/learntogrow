@@ -42,6 +42,9 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
   const [retryCount, setRetryCount] = useState(0)
   const [answers, setAnswers] = useState<Record<number, { selected: string; correct: boolean }>>({})
 
+  // Cache loaded questions by index so navigation back shows the same question
+  const questionMap = useRef<Record<number, QuestionFromDB>>({})
+
   // Fetch standards on mount (only if not pre-loaded)
   useEffect(() => {
     if (standardsProp && standardsProp.length > 0) {
@@ -119,9 +122,17 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
     }
   }, [currentIndex, answers, subjectId, gradeId, loading, standards.length])
 
-  // Load question from pre-generated questions
+  // Load question when currentIndex or standards change.
+  // Cache prevents re-fetching on navigate back to an answered question.
   const loadQuestion = useCallback(async (isRetry = false) => {
     if (standards.length === 0) return
+
+    // Use cached question if available (navigate back or mistakes mode)
+    const cached = questionMap.current[currentIndex]
+    if (cached && !isRetry) {
+      setCurrentQuestion(cached)
+      return
+    }
 
     setGeneratingQuestion(true)
     setError(null)
@@ -139,27 +150,33 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
         return
       }
 
+      // Cache the question for this index
+      questionMap.current[currentIndex] = question
       setCurrentQuestion(question)
-      const savedAnswer = answers[currentIndex]
-      if (savedAnswer) {
-        setSelectedAnswer(savedAnswer.selected)
-        setShowResult(true)
-      } else {
-        setSelectedAnswer(null)
-        setShowResult(false)
-      }
     } catch (err) {
       console.error('Failed to load questions:', err)
       setError('Failed to load questions. Please try again.')
     } finally {
       setGeneratingQuestion(false)
     }
-  }, [standards, currentIndex, answers])
+  }, [standards, currentIndex])
 
-  // Generate question when dependencies change
+  // Trigger fetch when standards or currentIndex changes
   useEffect(() => {
     loadQuestion()
   }, [loadQuestion])
+
+  // Restore saved answer state on index change (separate from question fetch)
+  useEffect(() => {
+    const savedAnswer = answers[currentIndex]
+    if (savedAnswer) {
+      setSelectedAnswer(savedAnswer.selected)
+      setShowResult(true)
+    } else {
+      setSelectedAnswer(null)
+      setShowResult(false)
+    }
+  }, [currentIndex, answers])
 
   const handlePrevious = () => {
     if (currentIndex > 0) {
@@ -175,21 +192,26 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
 
   const handleRetry = async () => {
     setRetryCount(prev => prev + 1)
+    // Clear cache so we fetch a fresh question
+    delete questionMap.current[currentIndex]
     await loadQuestion(true)
   }
 
   const handleAnswerSelect = async (value: string) => {
+    if (!currentQuestion) return
+
     setSelectedAnswer(value)
     setShowResult(true)
-    // Save answer to state and storage
-    const isCorrect = value === currentQuestion?.correct_answer
+
+    // Save answer to state
+    const isCorrect = value === currentQuestion.correct_answer
     setAnswers(prev => ({
       ...prev,
       [currentIndex]: { selected: value, correct: isCorrect }
     }))
 
     // Record answer to backend if authenticated
-    if (isAuthenticated && currentQuestion) {
+    if (isAuthenticated) {
       try {
         await recordAnswer({
           question_id: currentQuestion.id,
@@ -201,7 +223,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
         console.error('Failed to record answer:', err)
       }
     }
-
   }
 
   const handleExit = () => {
@@ -348,7 +369,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
             </motion.div>
           ) : currentQuestion ? (
             <motion.div
-              key="question"
+              key={`question-${currentQuestion.id}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
