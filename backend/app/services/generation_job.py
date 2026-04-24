@@ -2,6 +2,7 @@
 
 import json
 import logging
+from sqlalchemy import func
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -249,6 +250,47 @@ class QuestionGenerationJobService:
             db.close()
 
     @staticmethod
+    def _recompute_aggregates(db: Session, job_id: int) -> None:
+        """Recalculate job counters directly from the DB.
+
+        Uses aggregate queries so the update is correct even when called
+        concurrently with worker threads in their own sessions.
+        """
+        job = db.query(GenerationJob).get(job_id)
+        if not job:
+            return
+
+        completed = (
+            db.query(func.count(GenerationJobStandard.id))
+            .filter(
+                GenerationJobStandard.job_id == job_id,
+                GenerationJobStandard.status == JobStandardStatus.DONE.value,
+            )
+            .scalar()
+            or 0
+        )
+        failed = (
+            db.query(func.count(GenerationJobStandard.id))
+            .filter(
+                GenerationJobStandard.job_id == job_id,
+                GenerationJobStandard.status == JobStandardStatus.FAILED.value,
+            )
+            .scalar()
+            or 0
+        )
+        questions_created = (
+            db.query(func.coalesce(func.sum(GenerationJobStandard.questions_created), 0))
+            .filter(GenerationJobStandard.job_id == job_id)
+            .scalar()
+            or 0
+        )
+
+        job.completed_standards = completed
+        job.failed_standards = failed
+        job.questions_created = questions_created
+        db.commit()
+
+    @staticmethod
     def _do_run(
         db: Session,
         job_id: int,
@@ -314,25 +356,11 @@ class QuestionGenerationJobService:
                     except Exception as exc:
                         logger.error(f"Unexpected worker error in job {job_id}: {exc}")
 
-            # Recompute aggregates from DB after each batch
-            job = db.query(GenerationJob).get(job_id)
-            if not job:
-                break
-            summary = (
-                db.query(GenerationJobStandard)
-                .filter(GenerationJobStandard.job_id == job_id)
-                .all()
-            )
-            job.completed_standards = sum(
-                1 for js in summary if js.status == JobStandardStatus.DONE.value
-            )
-            job.failed_standards = sum(
-                1 for js in summary if js.status == JobStandardStatus.FAILED.value
-            )
-            job.questions_created = sum(
-                (js.questions_created or 0) for js in summary
-            )
-            db.commit()
+                    # Update parent job counters incrementally after each standard
+                    QuestionGenerationJobService._recompute_aggregates(db, job_id)
+
+                # Final batch-level sanity update before starting next batch
+                QuestionGenerationJobService._recompute_aggregates(db, job_id)
 
         # Finalise job
         db.refresh(job)
@@ -343,22 +371,16 @@ class QuestionGenerationJobService:
         if not job:
             return
 
+        # Final aggregate sync before terminal state
+        QuestionGenerationJobService._recompute_aggregates(db, job_id)
+
+        # Build errors from per-standard DB records to avoid in-memory
+        # accumulation and any concurrent-modification race on the JSON column.
         summary = (
             db.query(GenerationJobStandard)
             .filter(GenerationJobStandard.job_id == job_id)
             .all()
         )
-        job.completed_standards = sum(
-            1 for js in summary if js.status == JobStandardStatus.DONE.value
-        )
-        job.failed_standards = sum(
-            1 for js in summary if js.status == JobStandardStatus.FAILED.value
-        )
-        job.questions_created = sum(
-            (js.questions_created or 0) for js in summary
-        )
-        # Build errors from per-standard DB records to avoid in-memory
-        # accumulation and any concurrent-modification race on the JSON column.
         job.errors = [
             f"Standard {js.standard_id}: {js.error}"
             for js in summary
