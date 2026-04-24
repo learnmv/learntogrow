@@ -22,19 +22,21 @@ BACKOFF_BASE = 2
 # Pre-compile regex for option cleaning
 _OPTION_LABEL_PATTERN = re.compile(r'^[A-Da-d][\.)\s\-]+\s*')
 
-# Default GeoGebra commands for common standards
-# Note: API methods use camelCase (setCoordSystem, not SetCoordSystem)
+# Default GeoGebra commands for common standards.
+# These are passed to evalCommand() which accepts anything you can type
+# into the GeoGebra input bar.  View settings (axes, grid, bounds)
+# should NOT be here — they belong in applet_config/parameters.
 DEFAULT_GEOGEBRA_COMMANDS = {
-    "6.NS.5": ["A = (-4, 0)", "B = (4, 0)", "setCoordSystem(-10, 10, -2, 2)", "setAxesVisible(true, false)", "setGridVisible(true)"],
-    "6.NS.6": ["P = (3, 2)", "setCoordSystem(-5, 5, -5, 5)", "setAxesVisible(true, true)", "setGridVisible(true)"],
-    "6.NS.7": ["A = (-5, 0)", "B = (-2, 0)", "C = (1, 0)", "D = (4, 0)", "setCoordSystem(-8, 8, -2, 2)", "setAxesVisible(true, false)"],
-    "6.NS.8": ["A = (-4, 3)", "B = (5, 3)", "Segment(A, B)", "setCoordSystem(-8, 8, -2, 8)", "setAxesVisible(true, true)", "setGridVisible(true)"],
-    "6.G.1": ["A = (0, 0)", "B = (4, 0)", "C = (2, 3)", "Triangle(A, B, C)", "setCoordSystem(-1, 5, -1, 4)", "setAxesVisible(false, false)"],
-    "6.G.2": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)", "setFixed(A, true, false)", "setFixed(B, true, false)", "setFixed(C, true, false)", "setFixed(D, true, false)", "setCoordSystem(-1, 5, -1, 4)"],
-    "6.G.3": ["A = (0, 0)", "B = (3, 0)", "C = (3, 2)", "D = (0, 2)", "Polygon(A, B, C, D)", "E = (1.5, 1)", "Point(E)", "setCoordSystem(-2, 5, -2, 4)"],
-    "6.G.4": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)", "setCoordSystem(-1, 5, -1, 4)"],
-    "6.SP.4": ["A = (1, 2)", "B = (2, 4)", "C = (3, 3)", "D = (4, 5)", "E = (5, 2)", "List1 = {A, B, C, D, E}", "DotPlot(List1)", "setCoordSystem(0, 6, 0, 6)"],
-    "6.SP.5": ["A = (1, 2)", "B = (2, 5)", "C = (3, 3)", "D = (4, 7)", "E = (5, 4)", "List1 = {A, B, C, D, E}", "BoxPlot(List1)", "setCoordSystem(0, 6, 0, 8)"],
+    "6.NS.5": ["A = (-4, 0)", "B = (4, 0)"],
+    "6.NS.6": ["P = (3, 2)"],
+    "6.NS.7": ["A = (-5, 0)", "B = (-2, 0)", "C = (1, 0)", "D = (4, 0)"],
+    "6.NS.8": ["A = (-4, 3)", "B = (5, 3)", "Segment(A, B)"],
+    "6.G.1": ["A = (0, 0)", "B = (4, 0)", "C = (2, 3)", "Polygon(A, B, C)"],
+    "6.G.2": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)"],
+    "6.G.3": ["A = (0, 0)", "B = (3, 0)", "C = (3, 2)", "D = (0, 2)", "Polygon(A, B, C, D)", "E = (1.5, 1)"],
+    "6.G.4": ["A = (0, 0)", "B = (4, 0)", "C = (4, 3)", "D = (0, 3)", "Polygon(A, B, C, D)"],
+    "6.SP.4": ["A = (1, 2)", "B = (2, 4)", "C = (3, 3)", "D = (4, 5)", "E = (5, 2)", "List1 = {A, B, C, D, E}", "DotPlot(List1)"],
+    "6.SP.5": ["A = (1, 2)", "B = (2, 5)", "C = (3, 3)", "D = (4, 7)", "E = (5, 4)", "List1 = {A, B, C, D, E}", "BoxPlot(List1)"],
 }
 
 
