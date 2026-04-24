@@ -1,5 +1,5 @@
 import { Routes, Route, Link } from 'react-router-dom'
-import { BookOpen, Play } from 'lucide-react'
+import { BookOpen, Play, LogIn, UserPlus } from 'lucide-react'
 import { useAuth } from './contexts/AuthContext'
 import { ProtectedRoute } from './components/guards/ProtectedRoute'
 import { RoleRoute } from './components/guards/RoleRoute'
@@ -9,7 +9,6 @@ import { StudentRegistrationPage } from './pages/auth/StudentRegistrationPage'
 import { ParentRegistrationPage } from './pages/auth/ParentRegistrationPage'
 import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
-import { SubjectSelector } from './components/ui/SubjectSelector'
 import { StudentDashboard } from './pages/student/StudentDashboard'
 import { QuizPage } from './pages/student/QuizPage'
 import { QuizHistoryPage } from './pages/student/QuizHistoryPage'
@@ -41,7 +40,7 @@ function LandingPage() {
         <p className="mt-4 text-lg text-text-muted max-w-md mx-auto">
           {isAuthenticated
             ? `Welcome back! Ready to continue learning?`
-            : 'Select a subject and grade to begin your personalized quiz'}
+            : 'Log in or create an account to start your personalized quiz'}
         </p>
       </div>
 
@@ -67,23 +66,29 @@ function LandingPage() {
           </div>
         </div>
       ) : (
-        <>
-          <SubjectSelector />
-          <div className="flex gap-3 mt-2">
+        <div className="flex flex-col items-center gap-6">
+          <div className="text-center max-w-md">
+            <p className="text-text-muted font-body">
+              Create a free account to track your progress, get adaptive questions, and see your strengths and weaknesses.
+            </p>
+          </div>
+          <div className="flex gap-3">
             <Link
               to="/login"
-              className="px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-semibold hover:bg-sage-700 transition-colors"
+              className="flex items-center gap-2 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-semibold hover:bg-sage-700 transition-colors"
             >
+              <LogIn className="w-5 h-5" />
               Log in
             </Link>
             <Link
               to="/register/student"
-              className="px-6 py-3 bg-surface-elevated border border-border text-text-muted rounded-xl font-display font-medium hover:text-text transition-colors"
+              className="flex items-center gap-2 px-6 py-3 bg-surface-elevated border border-border text-text-muted rounded-xl font-display font-medium hover:text-text transition-colors"
             >
+              <UserPlus className="w-5 h-5" />
               Sign up
             </Link>
           </div>
-        </>
+        </div>
       )}
     </div>
   )
