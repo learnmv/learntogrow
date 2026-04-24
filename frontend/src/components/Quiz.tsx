@@ -7,10 +7,7 @@ import { getAdaptiveQuestion } from '../services/adaptive'
 import { recordAnswer } from '../services/student'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
-import { GraphingApplet } from './graphing'
-import { GeometryApplet } from './geometry'
-import { ThreeDApplet } from './3d'
-import { ClassicApplet } from './classic'
+import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -406,46 +403,11 @@ export function Quiz({ subjectId, gradeId, onExit, adaptive = false }: QuizProps
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
 
-              {/* GeoGebra Applet - for graphing questions */}
-              {currentQuestion.applet_type === 'graphing' && (
+              {/* GeoGebra Applet */}
+              {currentQuestion.applet_type && currentQuestion.applet_type !== '' && (
                 <div className="mb-6">
-                  <GraphingApplet
-                    commands={currentQuestion.geogebra_commands || undefined}
-                    config={currentQuestion.applet_config || undefined}
-                    height={400}
-                    width={600}
-                  />
-                </div>
-              )}
-
-              {/* GeoGebra Applet - for geometry questions */}
-              {currentQuestion.applet_type === 'geometry' && (
-                <div className="mb-6">
-                  <GeometryApplet
-                    commands={currentQuestion.geogebra_commands || undefined}
-                    config={currentQuestion.applet_config || undefined}
-                    height={400}
-                    width={600}
-                  />
-                </div>
-              )}
-
-              {/* GeoGebra Applet - for 3D questions */}
-              {currentQuestion.applet_type === '3d' && (
-                <div className="mb-6">
-                  <ThreeDApplet
-                    commands={currentQuestion.geogebra_commands || undefined}
-                    config={currentQuestion.applet_config || undefined}
-                    height={400}
-                    width={600}
-                  />
-                </div>
-              )}
-
-              {/* GeoGebra Applet - for classic questions */}
-              {currentQuestion.applet_type === 'classic' && (
-                <div className="mb-6">
-                  <ClassicApplet
+                  <GeoGebraApplet
+                    appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
                     commands={currentQuestion.geogebra_commands || undefined}
                     config={currentQuestion.applet_config || undefined}
                     height={400}
