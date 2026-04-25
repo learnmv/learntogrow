@@ -253,13 +253,16 @@ export function GeoGebraApplet({
     // Clear canvas before every command batch
     api.reset()
 
-    // Force Graphics-only perspective — hides algebra view, CAS, spreadsheet
+    // Hide algebra / CAS / spreadsheet panels regardless of type.
+    // Only force 2D Graphics-only perspective for non-3D applets
+    // (calling setPerspective('G') on a 3D applet hides the 3D view).
     try {
-      api.setPerspective?.('G')
-      api.setVisible?.('EuclidianView', true)
       api.setVisible?.('algebra', false)
       api.setVisible?.('cas', false)
       api.setVisible?.('spreadsheet', false)
+      if (appletType !== '3d') {
+        api.setPerspective?.('G')
+      }
     } catch {
       // setPerspective / setVisible may not exist in all applet versions
     }
