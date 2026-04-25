@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 
 export type GeoGebraAppletType = 'graphing' | 'geometry' | '3d' | 'classic'
 
@@ -57,6 +57,7 @@ function loadGeoGebraScript(): Promise<void> {
 interface GGBAppletApi {
   evalCommand: (command: string) => boolean
   reset: () => void
+  setSize: (width: number, height: number) => void
 }
 
 interface GGBAppletInstance {
@@ -133,8 +134,8 @@ export function GeoGebraApplet({
   const apiRef = useRef<GGBAppletApi | null>(null)
   const appletRef = useRef<GGBAppletInstance | null>(null)
 
-  // Track which commands have already been run so we don't duplicate
-  const executedCommandsRef = useRef<Set<string>>(new Set())
+  // Serialised config key to detect REAL config changes vs object-ref churn
+  const configKey = useMemo(() => JSON.stringify(config), [config])
 
   // ── Effect 1: create / destroy the applet (structural props only) ──
   useEffect(() => {
@@ -148,7 +149,6 @@ export function GeoGebraApplet({
       setError(null)
       apiRef.current = null
       appletRef.current = null
-      executedCommandsRef.current.clear()
 
       try {
         await loadGeoGebraScript()
@@ -174,7 +174,8 @@ export function GeoGebraApplet({
         const applet = new window.GGBApplet(parameters, true)
         appletRef.current = applet
 
-        const el = document.getElementById(containerId)
+        // Use the ref DOM node directly — safer than getElementById
+        const el = containerRef.current
         if (el) el.innerHTML = ''
         applet.inject(containerId)
 
@@ -219,13 +220,15 @@ export function GeoGebraApplet({
       if (checkReady) clearInterval(checkReady)
       if (timeoutId) clearTimeout(timeoutId)
 
-      const el = document.getElementById(containerId)
+      // Use the ref for cleanup — always points to the exact DOM node we own
+      const el = containerRef.current
       if (el) el.innerHTML = ''
       try { apiRef.current?.reset() } catch { /* ignore */ }
       apiRef.current = null
       appletRef.current = null
     }
-  }, [appletType, height, width, containerId, config])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appletType, height, width, containerId, configKey])
 
   // ── Effect 2: execute commands whenever they change or API becomes ready ──
   useEffect(() => {
@@ -233,37 +236,53 @@ export function GeoGebraApplet({
 
     const api = apiRef.current
 
-    // Clear canvas and previous command tracking
+    // Clear canvas before every command batch
     api.reset()
-    executedCommandsRef.current.clear()
 
     if (commands.length === 0) return
 
     const results: { command: string; success: boolean }[] = []
+    const failedCommands: string[] = []
+
     commands.forEach((cmd) => {
       try {
         const ok = api.evalCommand(cmd)
         results.push({ command: cmd, success: !!ok })
-        executedCommandsRef.current.add(cmd)
+        if (!ok) {
+          failedCommands.push(cmd)
+        }
       } catch (err) {
         console.warn('GeoGebra command failed:', cmd, err)
         results.push({ command: cmd, success: false })
-        executedCommandsRef.current.add(cmd)
+        failedCommands.push(cmd)
       }
     })
 
     if (onCommandResults && results.length > 0) {
       onCommandResults(results)
     }
+
+    // Surface silent command failures so students aren't staring at a blank grid
+    if (failedCommands.length > 0 && failedCommands.length === commands.length) {
+      setError(
+        `All ${failedCommands.length} diagram command(s) failed to render. The question may still be solvable without the diagram.`
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiReady, commands, onCommandResults])
 
   if (error) {
     return (
-      <div
-        className="rounded-xl border border-coral-200 bg-coral-50 p-4 text-center"
-        style={{ height, width: '100%' }}
-      >
-        <p className="text-coral-700 font-body text-sm">{error}</p>
+      <div className="relative rounded-xl border border-sage-200 overflow-hidden bg-white">
+        <div
+          className="rounded-xl border border-coral-200 bg-coral-50 p-4 text-center flex flex-col items-center justify-center gap-2"
+          style={{ height, width: '100%' }}
+        >
+          <p className="text-coral-700 font-body text-sm font-medium">{error}</p>
+          <p className="text-coral-600 font-body text-xs">
+            If the problem persists, try refreshing the page.
+          </p>
+        </div>
       </div>
     )
   }

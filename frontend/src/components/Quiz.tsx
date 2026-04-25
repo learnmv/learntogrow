@@ -76,9 +76,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
       const saved = localStorage.getItem(PROGRESS_KEY)
       if (saved) {
         const progress: SavedProgress = JSON.parse(saved)
-        // Check if saved progress matches current subject/grade
         if (progress.subjectId === subjectId && progress.gradeId === gradeId) {
-          // Check if progress is from last 24 hours
           const age = Date.now() - progress.timestamp
           if (age < PROGRESS_EXPIRY_MS) {
             setCurrentIndex(progress.currentIndex)
@@ -91,15 +89,13 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
     }
   }, [subjectId, gradeId])
 
-  // Debounced save progress to localStorage (prevents excessive writes)
+  // Debounced save progress to localStorage
   const pendingSaveRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   useEffect(() => {
     if (!loading && standards.length > 0) {
-      // Clear pending save
       if (pendingSaveRef.current) {
         clearTimeout(pendingSaveRef.current)
       }
-      // Debounce save by 500ms
       pendingSaveRef.current = setTimeout(() => {
         const progress: SavedProgress = {
           subjectId,
@@ -123,11 +119,9 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
   }, [currentIndex, answers, subjectId, gradeId, loading, standards.length])
 
   // Load question when currentIndex or standards change.
-  // Cache prevents re-fetching on navigate back to an answered question.
   const loadQuestion = useCallback(async (isRetry = false) => {
     if (standards.length === 0) return
 
-    // Use cached question if available (navigate back or mistakes mode)
     const cached = questionMap.current[currentIndex]
     if (cached && !isRetry) {
       setCurrentQuestion(cached)
@@ -150,7 +144,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
         return
       }
 
-      // Cache the question for this index
       questionMap.current[currentIndex] = question
       setCurrentQuestion(question)
     } catch (err) {
@@ -161,7 +154,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
     }
   }, [standards, currentIndex])
 
-  // Trigger fetch when standards or currentIndex changes
   useEffect(() => {
     loadQuestion()
   }, [loadQuestion])
@@ -192,7 +184,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
 
   const handleRetry = async () => {
     setRetryCount(prev => prev + 1)
-    // Clear cache so we fetch a fresh question
     delete questionMap.current[currentIndex]
     await loadQuestion(true)
   }
@@ -203,14 +194,12 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
     setSelectedAnswer(value)
     setShowResult(true)
 
-    // Save answer to state
     const isCorrect = value === currentQuestion.correct_answer
     setAnswers(prev => ({
       ...prev,
       [currentIndex]: { selected: value, correct: isCorrect }
     }))
 
-    // Record answer to backend if authenticated
     if (isAuthenticated) {
       try {
         await recordAnswer({
@@ -219,14 +208,12 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
           is_correct: isCorrect,
         })
       } catch (err) {
-        // Log error but don't disrupt the quiz experience
         console.error('Failed to record answer:', err)
       }
     }
   }
 
   const handleExit = () => {
-    // Clear saved progress when exiting
     try {
       localStorage.removeItem(PROGRESS_KEY)
     } catch (e) {
@@ -289,7 +276,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
     )
   }
 
-  // Handle case where no standards were found
   if (standards.length === 0) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center px-6">
@@ -352,7 +338,20 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
           />
         </motion.div>
 
-        {/* Question Card */}
+        {/* ── GeoGebra Applet — PERSISTENT, outside AnimatePresence ── */}
+        {currentQuestion?.applet_type && (
+          <div className="mb-6">
+            <GeoGebraApplet
+              appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
+              commands={currentQuestion.geogebra_commands || undefined}
+              config={currentQuestion.applet_config || undefined}
+              height={400}
+              width={600}
+            />
+          </div>
+        )}
+
+        {/* Question Card — ANIMATED, text + options only */}
         <AnimatePresence mode="wait">
           {generatingQuestion ? (
             <motion.div
@@ -369,7 +368,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
             </motion.div>
           ) : currentQuestion ? (
             <motion.div
-              key={`question-${currentQuestion.id}`}
+              key={`card-${currentQuestion.id}`}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
@@ -393,19 +392,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
                 className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
-
-              {/* GeoGebra Applet */}
-              {currentQuestion.applet_type && (
-                <div className="mb-6">
-                  <GeoGebraApplet
-                    appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
-                    commands={currentQuestion.geogebra_commands || undefined}
-                    config={currentQuestion.applet_config || undefined}
-                    height={400}
-                    width={600}
-                  />
-                </div>
-              )}
 
               {/* Options */}
               <div className="space-y-3">
