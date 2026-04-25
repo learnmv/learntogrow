@@ -163,11 +163,17 @@ export function GeoGebraApplet({
           appName: appletType,
           width,
           height,
+          // Base type defaults first
+          ...TYPE_DEFAULTS[appletType],
+          // Quiz mode: force-disable all UI chrome so students can't
+          // accidentally open toolbars, algebra panels, or menus.
           showToolBar: false,
           showAlgebraInput: false,
+          showAlgebraView: false,
+          allowStyleBar: false,
           showMenuBar: false,
           showResetIcon: false,
-          ...TYPE_DEFAULTS[appletType],
+          // User config last so admins can still override if needed
           ...config,
         }
 
