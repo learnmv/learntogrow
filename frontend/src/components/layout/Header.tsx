@@ -15,7 +15,6 @@ function getNavItems(role: UserRole): NavItem[] {
       return [
         { to: '/student', label: 'Dashboard' },
         { to: '/quiz', label: 'Quiz' },
-        { to: '/student/history', label: 'History' },
       ]
     case 'parent':
       return [

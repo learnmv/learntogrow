@@ -162,8 +162,6 @@ export function StudentDashboard() {
           </div>
         )}
       </motion.div>
-
-      {/* Recent Answers section removed per user request */}
     </div>
   )
 }

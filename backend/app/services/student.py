@@ -32,27 +32,11 @@ class StudentService:
         ).filter(AnsweredQuestion.student_id == student_id).first()
         standards_attempted = standards_result.count or 0
 
-        # Recent answers (last 20)
-        recent = self.db.query(AnsweredQuestion).filter(
-            AnsweredQuestion.student_id == student_id
-        ).order_by(AnsweredQuestion.answered_at.desc()).limit(20).all()
-
-        recent_answers = []
-        for answer in recent:
-            standard = self.db.query(Standard).filter(Standard.id == answer.standard_id).first()
-            recent_answers.append({
-                "question_id": answer.question_id,
-                "standard_code": standard.code if standard else "Unknown",
-                "is_correct": answer.is_correct,
-                "answered_at": answer.answered_at,
-            })
-
         return {
             "total_answered": total_answered,
             "correct_count": correct_count,
             "accuracy": accuracy,
             "standards_attempted": standards_attempted,
-            "recent_answers": recent_answers,
         }
 
     def get_mistake_standards(self, student_id: int, subject_id: Optional[int] = None, grade_id: Optional[int] = None) -> List[dict]:
