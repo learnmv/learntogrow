@@ -58,6 +58,10 @@ interface GGBAppletApi {
   evalCommand: (command: string) => boolean
   reset: () => void
   setSize: (width: number, height: number) => void
+  /** Switches to a single- or multi-view layout, e.g. \"G\" = Graphics only. */
+  setPerspective?: (perspective: string) => void
+  /** Hides/shows the left sidebar (algebra, CAS, spreadsheet). */
+  setVisible?: (view: string, visible: boolean) => void
 }
 
 interface GGBAppletInstance {
@@ -171,8 +175,12 @@ export function GeoGebraApplet({
           showAlgebraInput: false,
           showAlgebraView: false,
           allowStyleBar: false,
+          allowStyleChanges: false,
           showMenuBar: false,
           showResetIcon: false,
+          enableRightClick: false,
+          enableLabelDrags: false,
+          enableShiftDragZoom: true,
           // User config last so admins can still override if needed
           ...config,
         }
@@ -244,6 +252,17 @@ export function GeoGebraApplet({
 
     // Clear canvas before every command batch
     api.reset()
+
+    // Force Graphics-only perspective — hides algebra view, CAS, spreadsheet
+    try {
+      api.setPerspective?.('G')
+      api.setVisible?.('EuclidianView', true)
+      api.setVisible?.('algebra', false)
+      api.setVisible?.('cas', false)
+      api.setVisible?.('spreadsheet', false)
+    } catch {
+      // setPerspective / setVisible may not exist in all applet versions
+    }
 
     if (commands.length === 0) return
 

@@ -345,8 +345,8 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
               appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
               commands={currentQuestion.geogebra_commands || undefined}
               config={currentQuestion.applet_config || undefined}
-              height={300}
-              width={500}
+              height={280}
+              width={480}
             />
           </div>
         )}
