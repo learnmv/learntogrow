@@ -404,6 +404,20 @@ class QuestionGenerationJobService:
             f"completed, {job.failed_standards} failed, {job.questions_created} questions"
         )
 
+    def _compute_difficulty_spread(self, base: float, count: int) -> list[float]:
+        """Distribute N questions across difficulty tiers centered on the standard.
+
+        Example: base=0.50, count=5 → [0.30, 0.40, 0.50, 0.60, 0.70]
+        """
+        if count == 1:
+            return [base]
+        min_d = max(base - 0.20, 0.05)
+        max_d = min(base + 0.20, 0.95)
+        if count == 2:
+            return [min_d, max_d]
+        step = (max_d - min_d) / (count - 1)
+        return [round(min_d + step * i, 2) for i in range(count)]
+
     def _generate_for_standard(
         self,
         question_service: QuestionService,
@@ -412,14 +426,22 @@ class QuestionGenerationJobService:
         model: Optional[str],
         timeout: int,
     ) -> int:
-        """Generate questions for a single standard.
+        """Generate questions for a single standard with difficulty spread.
 
         Returns the number of questions successfully created.
         """
+        standard = self.db.query(Standard).get(job_std.standard_id)
+        if not standard:
+            raise ValueError(f"Standard {job_std.standard_id} not found")
+
+        base_difficulty = float(standard.difficulty_base) if standard.difficulty_base is not None else 0.5
+        difficulties = self._compute_difficulty_spread(base_difficulty, job_std.questions_requested)
+
         created = 0
-        for _ in range(job_std.questions_requested):
+        for target_difficulty in difficulties:
             question_data = question_service.generate_question(
                 standard_id=job_std.standard_id,
+                difficulty=target_difficulty,
                 question_type=question_type,
                 model=model,
                 timeout=timeout,
@@ -436,6 +458,9 @@ class QuestionGenerationJobService:
                     f"question={question_text!r}, answer={answer!r}"
                 )
 
+            # Use LLM's difficulty estimate if present, otherwise the target
+            difficulty = question_data.get("difficulty", target_difficulty)
+
             question = Question(
                 standard_id=job_std.standard_id,
                 question_text=question_text,
@@ -443,7 +468,7 @@ class QuestionGenerationJobService:
                 options=question_data.get("options"),
                 correct_answer=answer,
                 explanation=question_data.get("explanation"),
-                difficulty=question_data.get("difficulty", 0.5),
+                difficulty=difficulty,
                 requires_diagram=question_data.get("requires_diagram", False),
                 applet_type=question_data.get("applet_type"),
                 geogebra_commands=question_data.get("geogebra_commands"),

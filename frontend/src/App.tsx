@@ -11,6 +11,7 @@ import { ForgotPasswordPage } from './pages/auth/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { StudentDashboard } from './pages/student/StudentDashboard'
 import { QuizPage } from './pages/student/QuizPage'
+import { AdaptiveQuizPage } from './pages/student/AdaptiveQuizPage'
 import { ParentDashboard } from './pages/parent/ParentDashboard'
 import { ParentLinkRequestPage } from './pages/parent/ParentLinkRequestPage'
 import { ChildProgressPage } from './pages/parent/ChildProgressPage'
@@ -130,6 +131,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/quiz" element={<QuizPage />} />
+          <Route path="/adaptive-quiz" element={<AdaptiveQuizPage />} />
         </Route>
       </Route>
 

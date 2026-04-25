@@ -222,7 +222,8 @@ class QuestionService:
 
                 # Add metadata
                 question_data["standard_code"] = standard.code
-                question_data["difficulty"] = actual_difficulty
+                # Preserve LLM difficulty estimate if it returns one, else use target difficulty
+                question_data["difficulty"] = question_data.get("difficulty", actual_difficulty)
                 question_data["question_type"] = question_type
                 question_data["requires_diagram"] = standard.requires_diagram
                 question_data["applet_type"] = standard.applet_type
