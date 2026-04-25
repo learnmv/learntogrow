@@ -338,135 +338,130 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
           />
         </motion.div>
 
-        {/* Two-column layout: text left, diagram right (desktop) / stacked (mobile) */}
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* LEFT: Animated question card (text, options, explanation) */}
-          <div className="flex-1 min-w-0">
-            <AnimatePresence mode="wait">
-              {generatingQuestion ? (
-                <motion.div
-                  key="loading"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border min-h-[400px] flex items-center justify-center"
-                >
-                  <div className="text-center">
-                    <div className="w-12 h-12 border-4 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-4" />
-                    <p className="text-text-muted font-display">Loading question...</p>
-                  </div>
-                </motion.div>
-              ) : currentQuestion ? (
-                <motion.div
-                  key={`card-${currentQuestion.id}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-                  className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border"
-                >
-                  {/* Standard Info */}
-                  {currentStandard && (
-                    <div className="flex items-center gap-3 mb-6">
-                      <span className="px-3 py-1 bg-sage-100 text-sage-700 font-display font-medium text-sm rounded-full">
-                        {currentStandard?.code}
-                      </span>
-                      <span className="text-text-muted text-sm">
-                        Difficulty: {Math.round((currentStandard?.difficulty_base || 0) * 100)}%
-                      </span>
-                    </div>
-                  )}
+        {/* Question Card — ANIMATED */}
+        <AnimatePresence mode="wait">
+          {generatingQuestion ? (
+            <motion.div
+              key="loading"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border min-h-[400px] flex items-center justify-center"
+            >
+              <div className="text-center">
+                <div className="w-12 h-12 border-4 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-text-muted font-display">Loading question...</p>
+              </div>
+            </motion.div>
+          ) : currentQuestion ? (
+            <motion.div
+              key={`card-${currentQuestion.id}`}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+              className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border"
+            >
+              {/* Standard Info */}
+              {currentStandard && (
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="px-3 py-1 bg-sage-100 text-sage-700 font-display font-medium text-sm rounded-full">
+                    {currentStandard?.code}
+                  </span>
+                  <span className="text-text-muted text-sm">
+                    Difficulty: {Math.round((currentStandard?.difficulty_base || 0) * 100)}%
+                  </span>
+                </div>
+              )}
 
-                  {/* Question Text */}
-                  <h2
-                    className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
-                  />
+              {/* Question Text */}
+              <h2
+                className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
+              />
 
-                  {/* Options */}
-                  <div className="space-y-3">
-                    {(currentQuestion.options || []).map((option, index) => {
-                      const isSelected = selectedAnswer === option
-                      const isCorrectAnswer = option === currentQuestion.correct_answer
-                      const showCorrectness = showResult && (isSelected || isCorrectAnswer)
+              {/* Options */}
+              <div className="space-y-3">
+                {(currentQuestion.options || []).map((option, index) => {
+                  const isSelected = selectedAnswer === option
+                  const isCorrectAnswer = option === currentQuestion.correct_answer
+                  const showCorrectness = showResult && (isSelected || isCorrectAnswer)
 
-                      return (
-                        <motion.button
-                          key={index}
-                          onClick={() => !showResult && handleAnswerSelect(option)}
-                          disabled={showResult}
-                          whileHover={!showResult ? { scale: 1.02 } : {}}
-                          whileTap={!showResult ? { scale: 0.98 } : {}}
+                  return (
+                    <motion.button
+                      key={index}
+                      onClick={() => !showResult && handleAnswerSelect(option)}
+                      disabled={showResult}
+                      whileHover={!showResult ? { scale: 1.02 } : {}}
+                      whileTap={!showResult ? { scale: 0.98 } : {}}
+                      className={cn(
+                        'w-full p-4 rounded-2xl border-2 text-left transition-all duration-200',
+                        showCorrectness && isCorrectAnswer && 'border-green-500 bg-green-50',
+                        showCorrectness && isSelected && !isCorrectAnswer && 'border-coral-500 bg-coral-50',
+                        showCorrectness && !isSelected && !isCorrectAnswer && 'border-border bg-surface-muted',
+                        !showCorrectness && isSelected && 'border-sage-500 bg-sage-50',
+                        !showCorrectness && !isSelected && 'border-border hover:border-sage-300 hover:bg-sage-50/50'
+                      )}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span
                           className={cn(
-                            'w-full p-4 rounded-2xl border-2 text-left transition-all duration-200',
-                            showCorrectness && isCorrectAnswer && 'border-green-500 bg-green-50',
-                            showCorrectness && isSelected && !isCorrectAnswer && 'border-coral-500 bg-coral-50',
-                            showCorrectness && !isSelected && !isCorrectAnswer && 'border-border bg-surface-muted',
-                            !showCorrectness && isSelected && 'border-sage-500 bg-sage-50',
-                            !showCorrectness && !isSelected && 'border-border hover:border-sage-300 hover:bg-sage-50/50'
+                            'w-8 h-8 rounded-xl flex items-center justify-center font-display font-semibold text-sm',
+                            showCorrectness && isCorrectAnswer && 'bg-green-500 text-white',
+                            showCorrectness && isSelected && !isCorrectAnswer && 'bg-coral-500 text-white',
+                            showCorrectness && !isSelected && !isCorrectAnswer && 'bg-surface-muted text-text-muted',
+                            !showCorrectness && isSelected && 'bg-sage-500 text-white',
+                            !showCorrectness && !isSelected && 'bg-sage-100 text-sage-700'
                           )}
                         >
-                          <div className="flex items-center gap-4">
-                            <span
-                              className={cn(
-                                'w-8 h-8 rounded-xl flex items-center justify-center font-display font-semibold text-sm',
-                                showCorrectness && isCorrectAnswer && 'bg-green-500 text-white',
-                                showCorrectness && isSelected && !isCorrectAnswer && 'bg-coral-500 text-white',
-                                showCorrectness && !isSelected && !isCorrectAnswer && 'bg-surface-muted text-text-muted',
-                                !showCorrectness && isSelected && 'bg-sage-500 text-white',
-                                !showCorrectness && !isSelected && 'bg-sage-100 text-sage-700'
-                              )}
-                            >
-                              {String.fromCharCode(65 + index)}
-                            </span>
-                            <span className="font-body text-text text-lg" dangerouslySetInnerHTML={{ __html: renderMathToHtml(option) }} />
-                            {showCorrectness && isCorrectAnswer && (
-                              <CheckCircle className="w-5 h-5 text-green-500 ml-auto" />
-                            )}
-                            {showCorrectness && isSelected && !isCorrectAnswer && (
-                              <XCircle className="w-5 h-5 text-coral-500 ml-auto" />
-                            )}
-                          </div>
-                        </motion.button>
-                      )
-                    })}
-                  </div>
+                          {String.fromCharCode(65 + index)}
+                        </span>
+                        <span className="font-body text-text text-lg" dangerouslySetInnerHTML={{ __html: renderMathToHtml(option) }} />
+                        {showCorrectness && isCorrectAnswer && (
+                          <CheckCircle className="w-5 h-5 text-green-500 ml-auto" />
+                        )}
+                        {showCorrectness && isSelected && !isCorrectAnswer && (
+                          <XCircle className="w-5 h-5 text-coral-500 ml-auto" />
+                        )}
+                      </div>
+                    </motion.button>
+                  )
+                })}
+              </div>
 
-                  {/* Explanation */}
-                  <AnimatePresence>
-                    {showResult && currentQuestion.explanation && (
-                      <motion.div
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        className="mt-6 p-4 bg-sage-50 rounded-2xl border border-sage-200"
-                      >
-                        <p className="font-display font-medium text-sage-700 mb-2">Explanation</p>
-                        <p
-                          className="text-text-muted font-body"
-                          dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.explanation) }}
-                        />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
+              {/* Explanation */}
+              <AnimatePresence>
+                {showResult && currentQuestion.explanation && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-6 p-4 bg-sage-50 rounded-2xl border border-sage-200"
+                  >
+                    <p className="font-display font-medium text-sage-700 mb-2">Explanation</p>
+                    <p
+                      className="text-text-muted font-body"
+                      dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.explanation) }}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {/* Diagram — below question, small 50×50 */}
+        {currentQuestion?.applet_type && (
+          <div className="mt-6 flex justify-center">
+            <GeoGebraApplet
+              appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
+              commands={currentQuestion.geogebra_commands || undefined}
+              config={currentQuestion.applet_config || undefined}
+              height={50}
+              width={50}
+            />
           </div>
-
-          {/* RIGHT: Persistent diagram (desktop only, stacks below on mobile) */}
-          {currentQuestion?.applet_type && (
-            <div className="md:w-[480px] md:flex-shrink-0">
-              <GeoGebraApplet
-                appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
-                commands={currentQuestion.geogebra_commands || undefined}
-                config={currentQuestion.applet_config || undefined}
-                height={280}
-                width={480}
-              />
-            </div>
-          )}
-        </div>
+        )}
 
         {/* Navigation */}
         <motion.div
