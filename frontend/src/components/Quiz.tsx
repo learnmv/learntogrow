@@ -380,6 +380,19 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
                 dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
               />
 
+              {/* Diagram — inside the question card */}
+              {currentQuestion?.applet_type && (
+                <div className="mb-6 flex justify-center">
+                  <GeoGebraApplet
+                    appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
+                    commands={currentQuestion.geogebra_commands || undefined}
+                    config={currentQuestion.applet_config || undefined}
+                    height={50}
+                    width={50}
+                  />
+                </div>
+              )}
+
               {/* Options */}
               <div className="space-y-3">
                 {(currentQuestion.options || []).map((option, index) => {
@@ -449,19 +462,6 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
             </motion.div>
           ) : null}
         </AnimatePresence>
-
-        {/* Diagram — below question, small 50×50 */}
-        {currentQuestion?.applet_type && (
-          <div className="mt-6 flex justify-center">
-            <GeoGebraApplet
-              appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
-              commands={currentQuestion.geogebra_commands || undefined}
-              config={currentQuestion.applet_config || undefined}
-              height={50}
-              width={50}
-            />
-          </div>
-        )}
 
         {/* Navigation */}
         <motion.div

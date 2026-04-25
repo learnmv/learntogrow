@@ -163,14 +163,18 @@ export function GeoGebraApplet({
         }
 
         const parameters: Record<string, unknown> = {
+          // Base type defaults first
+          ...TYPE_DEFAULTS[appletType],
+          // User config can tweak type defaults (e.g. showAxes, showGrid)
+          ...config,
+          // Structural props — CANNOT be overridden by LLM-generated config
           id: containerId,
           appName: appletType,
           width,
           height,
-          // Base type defaults first
-          ...TYPE_DEFAULTS[appletType],
           // Quiz mode: force-disable all UI chrome so students can't
           // accidentally open toolbars, algebra panels, or menus.
+          // These are set LAST so the LLM can never override them.
           showToolBar: false,
           showAlgebraInput: false,
           showAlgebraView: false,
@@ -181,8 +185,6 @@ export function GeoGebraApplet({
           enableRightClick: false,
           enableLabelDrags: false,
           enableShiftDragZoom: true,
-          // User config last so admins can still override if needed
-          ...config,
         }
 
         const applet = new window.GGBApplet(parameters, true)
@@ -253,18 +255,19 @@ export function GeoGebraApplet({
     // Clear canvas before every command batch
     api.reset()
 
-    // Hide algebra / CAS / spreadsheet panels regardless of type.
-    // Only force 2D Graphics-only perspective for non-3D applets
-    // (calling setPerspective('G') on a 3D applet hides the 3D view).
+    // Hide algebra / CAS / spreadsheet panels via setPerspective.
+    // setVisible('algebra', ...) targets *objects* named 'algebra', not the view.
+    // The correct JS API for switching views is setPerspective:
+    //   'G' = 2D Graphics only    (hides algebra in graphing/geometry)
+    //   'T' = 3D Graphics only      (hides algebra in 3D calculator)
     try {
-      api.setVisible?.('algebra', false)
-      api.setVisible?.('cas', false)
-      api.setVisible?.('spreadsheet', false)
-      if (appletType !== '3d') {
+      if (appletType === '3d') {
+        api.setPerspective?.('T')
+      } else {
         api.setPerspective?.('G')
       }
     } catch {
-      // setPerspective / setVisible may not exist in all applet versions
+      // setPerspective may not exist in all applet versions
     }
 
     if (commands.length === 0) return
@@ -301,10 +304,9 @@ export function GeoGebraApplet({
 
   if (error) {
     return (
-      <div className="relative rounded-xl border border-sage-200 overflow-hidden bg-white">
+      <div className="relative rounded-xl border border-sage-200 overflow-hidden bg-white" style={{ width, height }}>
         <div
-          className="rounded-xl border border-coral-200 bg-coral-50 p-4 text-center flex flex-col items-center justify-center gap-2"
-          style={{ height, width: '100%' }}
+          className="h-full w-full rounded-xl border border-coral-200 bg-coral-50 p-4 text-center flex flex-col items-center justify-center gap-2"
         >
           <p className="text-coral-700 font-body text-sm font-medium">{error}</p>
           <p className="text-coral-600 font-body text-xs">
@@ -316,11 +318,10 @@ export function GeoGebraApplet({
   }
 
   return (
-    <div className="relative rounded-xl border border-sage-200 overflow-hidden bg-white">
+    <div className="relative rounded-xl border border-sage-200 overflow-hidden bg-white" style={{ width, height }}>
       {isLoading && (
         <div
           className="absolute inset-0 flex items-center justify-center bg-sage-50/80 z-10"
-          style={{ height }}
         >
           <div className="text-center">
             <div className="w-8 h-8 border-3 border-sage-200 border-t-sage-600 rounded-full animate-spin mx-auto mb-2" />
@@ -333,8 +334,7 @@ export function GeoGebraApplet({
       <div
         ref={containerRef}
         id={containerId}
-        style={{ height, width: '100%', minWidth: width }}
-        className="flex items-center justify-center"
+        style={{ width: '100%', height: '100%' }}
       />
     </div>
   )
