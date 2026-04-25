@@ -327,40 +327,41 @@ class QuestionGenerationJobService:
             .all()
         )
 
-        for i in range(0, len(pending), MAX_CONCURRENT_STANDARDS):
-            # Check cancellation before each batch
-            db.refresh(job)
-            if job.status == JobStatus.CANCELLED.value:
-                logger.info(f"Job {job_id} cancelled, stopping")
-                break
+        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_STANDARDS) as executor:
+            future_map = {
+                executor.submit(
+                    QuestionGenerationJobService._run_standard_worker,
+                    job_std.id,
+                    question_type,
+                    model,
+                    timeout,
+                ): job_std
+                for job_std in pending
+            }
 
-            batch = pending[i : i + MAX_CONCURRENT_STANDARDS]
+            for future in as_completed(future_map):
+                try:
+                    standard_id, created, error = future.result()
+                    if error:
+                        logger.error(f"Standard {standard_id} failed: {error}")
+                except Exception as exc:
+                    logger.error(f"Unexpected worker error in job {job_id}: {exc}")
 
-            with ThreadPoolExecutor(max_workers=len(batch)) as executor:
-                futures = {
-                    executor.submit(
-                        QuestionGenerationJobService._run_standard_worker,
-                        job_std.id,
-                        question_type,
-                        model,
-                        timeout,
-                    ): job_std
-                    for job_std in batch
-                }
-
-                for future in as_completed(futures):
-                    try:
-                        standard_id, created, error = future.result()
-                        if error:
-                            logger.error(f"Standard {standard_id} failed: {error}")
-                    except Exception as exc:
-                        logger.error(f"Unexpected worker error in job {job_id}: {exc}")
-
-                    # Update parent job counters incrementally after each standard
-                    QuestionGenerationJobService._recompute_aggregates(db, job_id)
-
-                # Final batch-level sanity update before starting next batch
+                # Update parent job counters incrementally after each standard
                 QuestionGenerationJobService._recompute_aggregates(db, job_id)
+
+                # Check for cancellation between completions
+                db.refresh(job)
+                if job.status == JobStatus.CANCELLED.value:
+                    # Cancel futures that haven't started yet
+                    for f in future_map:
+                        if not f.done():
+                            f.cancel()
+                    logger.info(f"Job {job_id} cancelled, draining remaining workers")
+                    break
+
+            # Final counter sync before terminal state
+            QuestionGenerationJobService._recompute_aggregates(db, job_id)
 
         # Finalise job
         db.refresh(job)
