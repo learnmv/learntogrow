@@ -3,7 +3,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 
-from app.models import AnsweredQuestion, Standard
+from app.models import AnsweredQuestion, Standard, Domain
 
 logger = logging.getLogger(__name__)
 
@@ -32,29 +32,43 @@ class StudentService:
         ).filter(AnsweredQuestion.student_id == student_id).first()
         standards_attempted = standards_result.count or 0
 
-        # Recent answers (last 20)
-        recent = self.db.query(AnsweredQuestion).filter(
-            AnsweredQuestion.student_id == student_id
-        ).order_by(AnsweredQuestion.answered_at.desc()).limit(20).all()
-
-        recent_answers = []
-        for answer in recent:
-            standard = self.db.query(Standard).filter(Standard.id == answer.standard_id).first()
-            recent_answers.append({
-                "question_id": answer.question_id,
-                "standard_code": standard.code if standard else "Unknown",
-                "is_correct": answer.is_correct,
-                "answered_at": answer.answered_at,
-            })
-
         return {
             "total_answered": total_answered,
             "correct_count": correct_count,
             "accuracy": accuracy,
             "standards_attempted": standards_attempted,
-            "recent_answers": recent_answers,
         }
 
-    def get_answer_history(self, student_id: int) -> dict:
-        """Get a student's full answer history."""
-        return self.get_progress_summary(student_id)
+    def get_mistake_standards(self, student_id: int, subject_id: Optional[int] = None, grade_id: Optional[int] = None) -> List[dict]:
+        """Get unique standards where the student answered incorrectly."""
+        # Get distinct standard_ids of wrong answers
+        wrong_standard_ids = self.db.query(
+            func.distinct(AnsweredQuestion.standard_id).label("standard_id")
+        ).filter(
+            AnsweredQuestion.student_id == student_id,
+            AnsweredQuestion.is_correct == False
+        ).subquery()
+
+        # Fetch full Standard records, optionally filtered by subject/grade
+        query = self.db.query(Standard).filter(Standard.id.in_(wrong_standard_ids))
+
+        if grade_id is not None:
+            query = query.filter(Standard.grade_id == grade_id)
+
+        if subject_id is not None:
+            query = query.join(Domain).filter(Domain.subject_id == subject_id)
+
+        standards = query.order_by(Standard.grade_id, Standard.domain_id, Standard.code).all()
+
+        return [
+            {
+                "id": s.id,
+                "code": s.code,
+                "description": s.description,
+                "grade_id": s.grade_id,
+                "domain_id": s.domain_id,
+                "difficulty_base": float(s.difficulty_base) if s.difficulty_base else None,
+                "keywords": s.keywords.split(",") if s.keywords else [],
+            }
+            for s in standards
+        ]

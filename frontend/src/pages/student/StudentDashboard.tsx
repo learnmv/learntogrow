@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Play, Target, BarChart3 } from 'lucide-react'
+import { BookOpen, Play, Target, BarChart3, RotateCcw } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { SubjectSelector } from '../../components/ui/SubjectSelector'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
-import { getOwnProgress } from '../../services/student'
+import { getOwnProgress, fetchMistakeStandards } from '../../services/student'
 import type { StudentProgress } from '../../types/student'
+import type { Standard } from '../../types/standards'
 
 export function StudentDashboard() {
   const { user } = useAuth()
@@ -14,6 +15,7 @@ export function StudentDashboard() {
   const [selectedSubject, setSelectedSubject] = useState<string>('')
   const [selectedGrade, setSelectedGrade] = useState<string>('')
   const [progress, setProgress] = useState<StudentProgress | null>(null)
+  const [mistakes, setMistakes] = useState<Standard[]>([])
   const [loadingProgress, setLoadingProgress] = useState(true)
 
   useEffect(() => {
@@ -35,14 +37,42 @@ export function StudentDashboard() {
     setSelectedGrade(gradeId)
   }, [])
 
+  // Fetch mistake standards when subject/grade selection changes
+  useEffect(() => {
+    if (!selectedSubject || !selectedGrade) {
+      setMistakes([])
+      return
+    }
+
+    async function loadMistakes() {
+      try {
+        const standards = await fetchMistakeStandards({
+          subject_id: parseInt(selectedSubject),
+          grade_id: parseInt(selectedGrade),
+        })
+        setMistakes(standards)
+      } catch {
+        setMistakes([])
+      }
+    }
+    loadMistakes()
+  }, [selectedSubject, selectedGrade])
+
   function handleStartQuiz() {
     if (selectedSubject && selectedGrade) {
       navigate(`/quiz?subjectId=${selectedSubject}&gradeId=${selectedGrade}`)
     }
   }
 
+  function handlePracticeMistakes() {
+    if (selectedSubject && selectedGrade && mistakes.length > 0) {
+      navigate(`/quiz?subjectId=${selectedSubject}&gradeId=${selectedGrade}&mode=mistakes`)
+    }
+  }
+
   const displayName = user?.full_name || user?.username || 'Student'
   const canStartQuiz = selectedSubject !== '' && selectedGrade !== ''
+  const hasMistakes = mistakes.length > 0
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -72,14 +102,25 @@ export function StudentDashboard() {
 
         <div className="flex flex-wrap items-end gap-6">
           <SubjectSelector onGradeSelect={handleGradeSelect} />
-          <button
-            onClick={handleStartQuiz}
-            disabled={!canStartQuiz}
-            className="flex items-center gap-2 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-semibold hover:bg-sage-700 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-sage-200 hover:shadow-xl"
-          >
-            <Play className="w-5 h-5" />
-            Start Quiz
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={handleStartQuiz}
+              disabled={!canStartQuiz}
+              className="flex items-center gap-2 px-6 py-3 bg-sage-600 text-white rounded-xl font-display font-semibold hover:bg-sage-700 transition-all duration-200 disabled:opacity-40 disabled:cursor-not-allowed shadow-lg shadow-sage-200 hover:shadow-xl"
+            >
+              <Play className="w-5 h-5" />
+              Start Quiz
+            </button>
+            {hasMistakes && (
+              <button
+                onClick={handlePracticeMistakes}
+                className="flex items-center gap-2 px-6 py-3 bg-coral-500 text-white rounded-xl font-display font-semibold hover:bg-coral-600 transition-all duration-200 shadow-lg shadow-coral-200 hover:shadow-xl"
+              >
+                <RotateCcw className="w-5 h-5" />
+                Practice Mistakes ({mistakes.length})
+              </button>
+            )}
+          </div>
         </div>
         {!canStartQuiz && (
           <p className="mt-3 text-sm text-text-muted font-body">
@@ -121,8 +162,6 @@ export function StudentDashboard() {
           </div>
         )}
       </motion.div>
-
-      {/* Recent Answers section removed per user request */}
     </div>
   )
 }
