@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 export type GeoGebraAppletType = 'graphing' | 'geometry' | '3d' | 'classic'
 
 interface GeoGebraAppletProps {
   appletType: GeoGebraAppletType
   commands?: string[]
-  config?: Record<string, unknown>
   height?: number
   width?: number
   onCommandResults?: (results: { command: string; success: boolean }[]) => void
@@ -120,7 +119,6 @@ const TYPE_DEFAULTS: Record<GeoGebraAppletType, Record<string, unknown>> = {
 export function GeoGebraApplet({
   appletType,
   commands = [],
-  config = {},
   height = 400,
   width = 600,
   onCommandResults,
@@ -137,9 +135,6 @@ export function GeoGebraApplet({
   // Refs to the live applet and its API — survive re-renders
   const apiRef = useRef<GGBAppletApi | null>(null)
   const appletRef = useRef<GGBAppletInstance | null>(null)
-
-  // Serialised config key to detect REAL config changes vs object-ref churn
-  const configKey = useMemo(() => JSON.stringify(config), [config])
 
   // ── Effect 1: create / destroy the applet (structural props only) ──
   useEffect(() => {
@@ -165,16 +160,13 @@ export function GeoGebraApplet({
         const parameters: Record<string, unknown> = {
           // Base type defaults first
           ...TYPE_DEFAULTS[appletType],
-          // User config can tweak type defaults (e.g. showAxes, showGrid)
-          ...config,
-          // Structural props — CANNOT be overridden by LLM-generated config
+          // Structural props
           id: containerId,
           appName: appletType,
           width,
           height,
           // Quiz mode: force-disable all UI chrome so students can't
           // accidentally open toolbars, algebra panels, or menus.
-          // These are set LAST so the LLM can never override them.
           showToolBar: false,
           showAlgebraInput: false,
           showAlgebraView: false,
@@ -244,7 +236,7 @@ export function GeoGebraApplet({
       appletRef.current = null
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appletType, height, width, containerId, configKey])
+  }, [appletType, height, width, containerId])
 
   // ── Effect 2: execute commands whenever they change or API becomes ready ──
   useEffect(() => {

@@ -446,7 +446,6 @@ class QuestionGenerationJobService:
                 requires_diagram=question_data.get("requires_diagram", False),
                 applet_type=question_data.get("applet_type"),
                 geogebra_commands=question_data.get("geogebra_commands"),
-                applet_config=question_data.get("applet_config"),
                 generated_by="admin_job",
                 is_active=True,
             )

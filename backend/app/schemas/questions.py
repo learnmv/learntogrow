@@ -55,10 +55,6 @@ class QuestionContent(BaseModel):
         None,
         description="GeoGebra commands to create the diagram"
     )
-    applet_config: Optional[dict] = Field(
-        None,
-        description="GeoGebra applet configuration"
-    )
 
 
 class QuestionResponse(QuestionContent):

@@ -9,7 +9,6 @@ interface QuestionContent {
   requires_diagram: boolean
   applet_type: AppletType | null
   geogebra_commands: string[] | null
-  applet_config: Record<string, unknown> | null
 }
 
 export interface GeneratedQuestion extends QuestionContent {
