@@ -27,7 +27,7 @@ export async function recordAdaptiveAnswer(data: {
     reason?: string
   }
 }> {
-  return post(`/questions/answer`, data)
+  return post(`/questions/answer`, data, { headers: getAuthHeaders() })
 }
 
 /**

@@ -40,7 +40,8 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
       setQuestionCount(prev => prev + 1)
     } catch (err: any) {
       console.error('Failed to load adaptive question:', err)
-      if (err?.response?.status === 404) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('404') || msg.includes('No active questions')) {
         setError('No more questions available in this domain right now.')
       } else {
         setError('Failed to load question. Please try again.')
