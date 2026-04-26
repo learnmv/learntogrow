@@ -10,11 +10,40 @@ from app.schemas.questions import (
     QuestionResponse,
     QuestionDBResponse
 )
-from app.models import AnsweredQuestion, Question, Standard
+from app.services.adaptive import get_next_adaptive_question, update_theta_after_answer
+from app.models import AnsweredQuestion, Question, Standard, Domain, StudentDomainAbility
 from app.routers.auth import get_current_user, require_role
 
 router = APIRouter(prefix="/questions", tags=["questions"])
 security = HTTPBearer(auto_error=False)
+
+
+@router.get("/adaptive", response_model=QuestionDBResponse)
+def get_adaptive_question(
+    domain_id: int = Query(..., description="Domain ID for adaptive question selection"),
+    current_user: dict = Depends(require_role(["student"])),
+    db: Session = Depends(get_db)
+):
+    """Serve the next question adaptively based on the student's current ability.
+
+    - **domain_id**: The curriculum domain to pull a question from
+
+    Algorithm:
+    1. Fetches the student's theta (ability score) for this domain.
+    2. Selects the active question with difficulty closest to theta.
+    3. Excludes questions the student has already answered.
+    """
+    question = get_next_adaptive_question(
+        db=db,
+        student_id=current_user["user_id"],
+        domain_id=domain_id,
+    )
+    if not question:
+        raise HTTPException(
+            status_code=404,
+            detail="No active questions available for this domain. Please contact your teacher or try again later."
+        )
+    return question
 
 
 @router.post("/generate", response_model=QuestionResponse)
@@ -94,6 +123,9 @@ def record_answer(
     """
     Record that a student answered a question.
 
+    Also recalculates the student's adaptive ability score (theta) for
+    the question's domain.
+
     - **question_id**: The ID of the question answered
     - **selected_answer**: The answer the student selected
     - **is_correct**: Whether the answer is correct
@@ -128,6 +160,58 @@ def record_answer(
         constraint='answered_questions_student_id_question_id_key'
     )
     db.execute(stmt)
+
+    # Update adaptive ability (theta) — wrapped so answer recording never fails because of this
+    try:
+        std = db.query(Standard).filter(Standard.id == question.standard_id).first()
+        if std:
+            theta_result = update_theta_after_answer(
+                db=db,
+                student_id=current_user["user_id"],
+                domain_id=std.domain_id,
+                question_id=question_id,
+                is_correct=is_correct,
+            )
+        else:
+            theta_result = {"updated": False, "reason": "Standard not found"}
+    except Exception as exc:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Theta update failed after answer for student {current_user['user_id']}: {exc}")
+        theta_result = {"updated": False, "reason": str(exc)}
+
     db.commit()
 
-    return {"message": "Answer recorded successfully"}
+    return {
+        "message": "Answer recorded successfully",
+        "adaptive": theta_result,
+    }
+
+
+@router.get("/adaptive-domain", response_model=dict)
+def get_adaptive_domain_summary(
+    domain_id: int = Query(..., description="Domain ID"),
+    current_user: dict = Depends(require_role(["student"])),
+    db: Session = Depends(get_db)
+):
+    """Return the student's current theta and domain stats."""
+    ability_record = db.query(StudentDomainAbility).filter(
+        StudentDomainAbility.student_id == current_user["user_id"],
+        StudentDomainAbility.domain_id == domain_id,
+    ).first()
+
+    domain = db.query(Domain).filter(Domain.id == domain_id).first()
+    if not domain:
+        raise HTTPException(status_code=404, detail="Domain not found")
+
+    theta = float(ability_record.theta) if ability_record else 0.35
+    questions_attempted = ability_record.questions_attempted if ability_record else 0
+    correct_streak = ability_record.correct_streak if ability_record else 0
+
+    return {
+        "domain_id": domain_id,
+        "domain_name": domain.name,
+        "theta": theta,
+        "questions_attempted": questions_attempted,
+        "correct_streak": correct_streak,
+    }

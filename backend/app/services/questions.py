@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import re
 import time
 from pathlib import Path
@@ -221,7 +222,8 @@ class QuestionService:
 
                 # Add metadata
                 question_data["standard_code"] = standard.code
-                question_data["difficulty"] = actual_difficulty
+                # Preserve LLM difficulty estimate if it returns one, else use target difficulty
+                question_data["difficulty"] = question_data.get("difficulty", actual_difficulty)
                 question_data["question_type"] = question_type
                 question_data["requires_diagram"] = standard.requires_diagram
                 question_data["applet_type"] = standard.applet_type
@@ -258,7 +260,18 @@ class QuestionService:
                 logger.error("Ollama request timed out")
                 raise TimeoutError(f"Ollama request timed out after {actual_timeout} seconds")
             except httpx.HTTPStatusError as e:
-                logger.error(f"Ollama HTTP error: {e.response.status_code} - {e.response.text}")
+                status = e.response.status_code
+                # Retry on rate-limit (429) or transient server errors (502, 503)
+                if status in (429, 502, 503) and attempt < MAX_RETRIES - 1:
+                    sleep_seconds = (BACKOFF_BASE ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        f"Attempt {attempt + 1}: Ollama returned {status}, "
+                        f"backing off {sleep_seconds:.1f}s before retry"
+                    )
+                    time.sleep(sleep_seconds)
+                    last_error = e
+                    continue
+                logger.error(f"Ollama HTTP error: {status} - {e.response.text}")
                 raise RuntimeError(f"Ollama error: {e.response.text}")
             except Exception as e:
                 logger.error(f"Unexpected error calling Ollama: {e}")

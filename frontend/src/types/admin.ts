@@ -28,6 +28,7 @@ export type JobStandardStatus = 'pending' | 'running' | 'done' | 'failed';
 export interface GenerationJobStandard {
   id: number;
   standard_id: number;
+  standard_code?: string | null;
   questions_requested: number;
   questions_created: number;
   status: JobStandardStatus;

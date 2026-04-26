@@ -35,6 +35,11 @@ export async function fetchApi<T>(
     throw new Error(detail)
   }
 
+  // Handle 204 No Content gracefully
+  if (response.status === 204) {
+    return undefined as T
+  }
+
   return response.json() as Promise<T>
 }
 

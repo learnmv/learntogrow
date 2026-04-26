@@ -195,6 +195,7 @@ export function QuestionGenerationPanel() {
       question_type: questionType,
       subject_id: Number(selectedSubject),
       grade_id: selectedGrade ? Number(selectedGrade) : undefined,
+      timeout: timeout,
     };
 
     setLoading(true);
@@ -473,7 +474,7 @@ export function QuestionGenerationPanel() {
                     className="h-full bg-sage-500 rounded-full transition-all duration-500"
                     style={{
                       width: `${activeJob.total_standards > 0
-                        ? (activeJob.completed_standards / activeJob.total_standards) * 100
+                        ? ((activeJob.completed_standards + activeJob.failed_standards) / activeJob.total_standards) * 100
                         : 0}%`,
                     }}
                   />
@@ -492,7 +493,7 @@ export function QuestionGenerationPanel() {
                       {js.status === 'failed' && <AlertCircle className="w-3.5 h-3.5 text-coral-500 shrink-0" />}
                       {js.status === 'running' && <Loader2 className="w-3.5 h-3.5 text-sage-500 animate-spin shrink-0" />}
                       {js.status === 'pending' && <Clock className="w-3.5 h-3.5 text-text-subtle shrink-0" />}
-                      <span className="text-text-muted">Standard {js.standard_id}</span>
+                      <span className="text-text-muted">{js.standard_code ?? `Standard ${js.standard_id}`}</span>
                       {js.error && <span className="text-coral-500 ml-auto truncate max-w-[120px]">{js.error}</span>}
                     </div>
                   ))}

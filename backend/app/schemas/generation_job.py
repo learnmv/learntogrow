@@ -12,6 +12,7 @@ class GenerationJobStandardResponse(BaseModel):
     """Per-standard progress within a generation job."""
     id: int
     standard_id: int
+    standard_code: Optional[str] = None
     questions_requested: int = 1
     questions_created: int = 0
     status: str = JobStandardStatus.PENDING.value

@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Optional
 
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, Text, String
 from sqlalchemy.orm import relationship
@@ -73,6 +74,11 @@ class GenerationJobStandard(Base):
     questions_created = Column(Integer, nullable=False, default=0)
     status = Column(String(20), default=JobStandardStatus.PENDING.value)
     error = Column(Text)
+
+    @property
+    def standard_code(self) -> Optional[str]:
+        return self.standard.code if self.standard else None
+
     started_at = Column(DateTime)
     completed_at = Column(DateTime)
 
