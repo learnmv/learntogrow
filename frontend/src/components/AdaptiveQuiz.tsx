@@ -25,6 +25,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
 
   const [questionCount, setQuestionCount] = useState(0)
   const [correctCount, setCorrectCount] = useState(0)
+  const [answeredCount, setAnsweredCount] = useState(0)
   const [theta, setTheta] = useState<number | null>(null)
 
   const loadNextQuestion = useCallback(async (isRetry = false) => {
@@ -69,6 +70,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
 
     setSelectedAnswer(value)
     setShowResult(true)
+    setAnsweredCount(prev => prev + 1)
 
     const isCorrect = value === currentQuestion.correct_answer
 
@@ -96,8 +98,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
     await loadNextQuestion()
   }
 
-  const answeredSoFar = questionCount > 0 ? questionCount - (loading && !currentQuestion ? 1 : 0) : 0
-  const accuracy = answeredSoFar > 0 ? Math.round((correctCount / answeredSoFar) * 100) : 0
+  const accuracy = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0
 
   if (loading && !currentQuestion) {
     return (
