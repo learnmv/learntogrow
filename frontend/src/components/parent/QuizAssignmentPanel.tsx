@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ClipboardList, Loader2, Plus, RefreshCw } from 'lucide-react'
+import { ClipboardList, Loader2, Plus, RefreshCw, Sparkles } from 'lucide-react'
 import { fetchGrades, fetchSubjects } from '../../services/standards'
 import { createQuizAssignment, getParentQuizAssignments } from '../../services/parent'
 import type { Grade, Subject } from '../../types/standards'
@@ -11,9 +11,10 @@ import type {
 
 interface QuizAssignmentPanelProps {
   childrenList: ParentStudentLink[]
+  refreshKey?: number
 }
 
-export function QuizAssignmentPanel({ childrenList }: QuizAssignmentPanelProps) {
+export function QuizAssignmentPanel({ childrenList, refreshKey = 0 }: QuizAssignmentPanelProps) {
   const [assignments, setAssignments] = useState<QuizAssignmentSummary[]>([])
   const [subjects, setSubjects] = useState<Subject[]>([])
   const [grades, setGrades] = useState<Grade[]>([])
@@ -24,6 +25,7 @@ export function QuizAssignmentPanel({ childrenList }: QuizAssignmentPanelProps) 
   const [description, setDescription] = useState('')
   const [difficulty, setDifficulty] = useState<QuizAssignmentDifficulty>('medium')
   const [questionCount, setQuestionCount] = useState(5)
+  const [generateMissing, setGenerateMissing] = useState(false)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -73,6 +75,16 @@ export function QuizAssignmentPanel({ childrenList }: QuizAssignmentPanelProps) 
     loadGrades()
   }, [subjectId])
 
+  useEffect(() => {
+    if (refreshKey > 0) {
+      getParentQuizAssignments()
+        .then(setAssignments)
+        .catch((error: unknown) => {
+          setMessage(error instanceof Error ? error.message : 'Failed to refresh assignments.')
+        })
+    }
+  }, [refreshKey])
+
   async function refreshAssignments() {
     try {
       const data = await getParentQuizAssignments()
@@ -96,6 +108,7 @@ export function QuizAssignmentPanel({ childrenList }: QuizAssignmentPanelProps) 
         grade_id: gradeId ? Number(gradeId) : undefined,
         difficulty,
         question_count: questionCount,
+        generate_missing: generateMissing,
       })
       await refreshAssignments()
       setMessage('Quiz assigned successfully.')
@@ -219,6 +232,17 @@ export function QuizAssignmentPanel({ childrenList }: QuizAssignmentPanelProps) 
           </button>
         </div>
       </div>
+
+      <label className="mt-3 flex items-center gap-2 text-sm text-text-muted">
+        <input
+          type="checkbox"
+          checked={generateMissing}
+          onChange={(event) => setGenerateMissing(event.target.checked)}
+          className="h-4 w-4 rounded border-border text-sage-600 focus:ring-sage-500"
+        />
+        <Sparkles className="w-4 h-4 text-sage-600" />
+        AI-fill missing questions when the question bank is short
+      </label>
 
       {message && (
         <p className="mt-3 text-sm text-text-muted">{message}</p>

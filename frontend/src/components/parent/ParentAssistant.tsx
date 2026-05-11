@@ -7,6 +7,7 @@ import type { ParentStudentLink } from '../../types/parent'
 
 interface ParentAssistantProps {
   childrenList: ParentStudentLink[]
+  onAssignmentCreated?: () => void
 }
 
 interface ChatMessage {
@@ -17,10 +18,11 @@ interface ChatMessage {
 const starterPrompts = [
   "What are my child's weak topics?",
   "What are my child's strong topics?",
+  'Assign a 5 question medium quiz',
   'Show syllabus',
 ]
 
-export function ParentAssistant({ childrenList }: ParentAssistantProps) {
+export function ParentAssistant({ childrenList, onAssignmentCreated }: ParentAssistantProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       role: 'assistant',
@@ -104,6 +106,9 @@ export function ParentAssistant({ childrenList }: ParentAssistantProps) {
       })
       setMessages((current) => [...current, { role: 'assistant', content: response.answer }])
       setSuggestions(response.suggestions.length > 0 ? response.suggestions : starterPrompts)
+      if (response.intent === 'quiz_assignment' && response.data.assignment) {
+        onAssignmentCreated?.()
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'The assistant could not answer right now.'
       setMessages((current) => [...current, { role: 'assistant', content: message }])
@@ -122,7 +127,7 @@ export function ParentAssistant({ childrenList }: ParentAssistantProps) {
               <h2 className="text-lg font-display font-semibold text-text">Parent Assistant</h2>
             </div>
             <p className="mt-1 text-sm text-text-muted">
-              Ask about strengths, weak topics, progress, or curriculum syllabus.
+              Ask about strengths, weak topics, syllabus, or assign a quiz.
             </p>
           </div>
 
@@ -233,7 +238,7 @@ export function ParentAssistant({ childrenList }: ParentAssistantProps) {
           <input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about weak topics, strong topics, or syllabus..."
+            placeholder="Ask about weak topics, syllabus, or assign a quiz..."
             className="flex-1 h-12 px-4 bg-surface border border-border rounded-xl text-text focus:outline-none focus:ring-2 focus:ring-sage-500"
           />
           <button

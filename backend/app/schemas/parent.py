@@ -83,7 +83,7 @@ class ParentAssistantChatRequest(BaseModel):
 
 
 class ParentAssistantChatResponse(BaseModel):
-    """Parent assistant response for Phase 1 deterministic tools."""
+    """Parent assistant response for learning, syllabus, and quiz assignment tools."""
     intent: str
     answer: str
     requires_student: bool = False

@@ -16,6 +16,7 @@ class QuizAssignmentCreateRequest(BaseModel):
     standard_ids: list[int] = Field(default_factory=list)
     difficulty: str = Field("medium", pattern="^(easy|medium|hard|mixed)$")
     question_count: int = Field(5, ge=1, le=25)
+    generate_missing: bool = False
     due_at: Optional[datetime] = None
 
 
@@ -31,6 +32,7 @@ class QuizAssignmentSummary(BaseModel):
     question_count: int
     answered_count: int = 0
     correct_count: int = 0
+    generated_questions: int = 0
     subject_id: Optional[int] = None
     subject_name: Optional[str] = None
     grade_id: Optional[int] = None

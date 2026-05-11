@@ -24,6 +24,7 @@ export function ParentDashboard() {
   const [children, setChildren] = useState<ParentStudentLink[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0)
 
   useEffect(() => {
     loadChildren()
@@ -58,10 +59,13 @@ export function ParentDashboard() {
         </p>
       </div>
 
-      <ParentAssistant childrenList={children} />
+      <ParentAssistant
+        childrenList={children}
+        onAssignmentCreated={() => setAssignmentRefreshKey((key) => key + 1)}
+      />
 
       {!loading && !error && children.length > 0 && (
-        <QuizAssignmentPanel childrenList={children} />
+        <QuizAssignmentPanel childrenList={children} refreshKey={assignmentRefreshKey} />
       )}
 
       {/* Action Bar */}

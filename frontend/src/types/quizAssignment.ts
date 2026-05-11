@@ -13,6 +13,7 @@ export interface QuizAssignmentCreateRequest {
   standard_ids?: number[]
   difficulty: QuizAssignmentDifficulty
   question_count: number
+  generate_missing?: boolean
   due_at?: string
 }
 
@@ -28,6 +29,7 @@ export interface QuizAssignmentSummary {
   question_count: number
   answered_count: number
   correct_count: number
+  generated_questions: number
   subject_id: number | null
   subject_name: string | null
   grade_id: number | null

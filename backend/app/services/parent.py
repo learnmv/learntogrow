@@ -27,6 +27,7 @@ from app.schemas.parent import (
     StudentDetailForParent,
 )
 from app.schemas.quiz_assignment import QuizAssignmentCreateRequest
+from app.services.questions import QuestionService
 from app.services.student import get_skill_level
 
 
@@ -303,10 +304,23 @@ class ParentService:
             raise ValueError("You are not linked to this student or the link is pending approval")
 
         questions = self._select_assignment_questions(request)
+        generated_count = 0
+        if len(questions) < request.question_count and request.generate_missing:
+            if request.subject_id is None and not request.domain_ids and not request.standard_ids:
+                raise ValueError("Select a subject, domain, or standard before using AI-fill for missing questions.")
+            missing_count = request.question_count - len(questions)
+            try:
+                generated_questions = self._generate_assignment_questions(request, missing_count)
+                generated_count = len(generated_questions)
+                questions.extend(generated_questions)
+            except Exception:
+                self.db.rollback()
+                raise
+
         if len(questions) < request.question_count:
             raise ValueError(
                 f"Only {len(questions)} matching unanswered questions are available. "
-                "Try a lower question count, mixed difficulty, or broader filters."
+                "Try a lower question count, mixed difficulty, broader filters, or AI-fill missing questions."
             )
 
         assignment = QuizAssignment(
@@ -333,7 +347,9 @@ class ParentService:
 
         self.db.commit()
         self.db.refresh(assignment)
-        return self.get_quiz_assignment_for_parent(parent_id, assignment.id)
+        result = self.get_quiz_assignment_for_parent(parent_id, assignment.id)
+        result["generated_questions"] = generated_count
+        return result
 
     def get_quiz_assignments_for_parent(self, parent_id: int) -> list[dict]:
         assignments = (
@@ -388,6 +404,95 @@ class ParentService:
             query = query.filter(Question.difficulty >= 0.65)
 
         return query.order_by(func.random()).limit(request.question_count).all()
+
+    def _select_assignment_standards(self, request: QuizAssignmentCreateRequest) -> list[Standard]:
+        query = self.db.query(Standard).join(Domain, Standard.domain_id == Domain.id)
+
+        if request.subject_id is not None:
+            query = query.filter(Domain.subject_id == request.subject_id)
+        if request.grade_id is not None:
+            query = query.filter(Standard.grade_id == request.grade_id)
+        if request.domain_ids:
+            query = query.filter(Standard.domain_id.in_(request.domain_ids))
+        if request.standard_ids:
+            query = query.filter(Standard.id.in_(request.standard_ids))
+
+        return query.order_by(func.random()).limit(25).all()
+
+    def _generate_assignment_questions(
+        self,
+        request: QuizAssignmentCreateRequest,
+        missing_count: int,
+    ) -> list[Question]:
+        standards = self._select_assignment_standards(request)
+        if not standards:
+            raise ValueError(
+                "I could not find standards for those filters, so I could not generate missing questions."
+            )
+
+        question_service = QuestionService(self.db)
+        generated_questions = []
+        last_error = None
+
+        for index in range(missing_count):
+            standard = standards[index % len(standards)]
+            target_difficulty = self._assignment_difficulty_target(request.difficulty, standard)
+            try:
+                question_data = question_service.generate_question(
+                    standard_id=standard.id,
+                    difficulty=target_difficulty,
+                    question_type="multiple_choice",
+                )
+                generated_questions.append(
+                    self._persist_generated_assignment_question(
+                        standard_id=standard.id,
+                        question_data=question_data,
+                    )
+                )
+            except (ConnectionError, TimeoutError, RuntimeError):
+                raise
+            except Exception as exc:
+                last_error = exc
+
+        if len(generated_questions) < missing_count:
+            raise RuntimeError(
+                f"Generated {len(generated_questions)} of {missing_count} needed question"
+                f"{'s' if missing_count != 1 else ''}. Last error: {last_error}"
+            )
+
+        return generated_questions
+
+    def _assignment_difficulty_target(self, difficulty: str, standard: Standard) -> float:
+        if difficulty == "easy":
+            return 0.30
+        if difficulty == "medium":
+            return 0.55
+        if difficulty == "hard":
+            return 0.80
+        return float(standard.difficulty_base) if standard.difficulty_base is not None else 0.50
+
+    def _persist_generated_assignment_question(
+        self,
+        standard_id: int,
+        question_data: dict,
+    ) -> Question:
+        question = Question(
+            standard_id=standard_id,
+            question_text=question_data["question"],
+            question_type=question_data.get("question_type", "multiple_choice"),
+            options=question_data.get("options"),
+            correct_answer=question_data["answer"],
+            explanation=question_data.get("explanation"),
+            difficulty=question_data.get("difficulty"),
+            requires_diagram=question_data.get("requires_diagram", False),
+            applet_type=question_data.get("applet_type"),
+            geogebra_commands=question_data.get("geogebra_commands"),
+            generated_by="parent_assistant",
+            is_active=True,
+        )
+        self.db.add(question)
+        self.db.flush()
+        return question
 
     def _serialize_assignment(self, assignment: QuizAssignment, include_questions: bool = False) -> dict:
         question_ids = [item.question_id for item in assignment.assignment_questions]
@@ -445,7 +550,7 @@ class ParentService:
         return data
 
     def handle_assistant_chat(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
-        """Handle Phase 1 parent assistant requests using deterministic data tools."""
+        """Handle parent assistant requests using deterministic learning and quiz tools."""
         message = request.message.strip()
         intent = self._detect_assistant_intent(message)
 
@@ -476,6 +581,8 @@ class ParentService:
                 "data": {"children": [child.model_dump() for child in linked_students]},
             }
 
+        if intent == "quiz_assignment":
+            return self._assistant_quiz_assignment_response(parent_id, student, request)
         if intent == "strong_topics":
             return self._assistant_learning_response(student, focus="strong")
         if intent == "weak_topics":
@@ -485,6 +592,13 @@ class ParentService:
 
     def _detect_assistant_intent(self, message: str) -> str:
         text = message.lower()
+        assignment_actions = ["assign", "post", "create", "make", "give", "send"]
+        assignment_targets = ["quiz", "questions", "problems", "practice set"]
+        if (
+            any(action in text for action in assignment_actions)
+            and any(target in text for target in assignment_targets)
+        ):
+            return "quiz_assignment"
         if any(term in text for term in ["syllabus", "curriculum", "topics", "standards", "domains"]):
             return "syllabus"
         if any(term in text for term in ["weak", "struggl", "improve", "mistake", "practice", "behind"]):
@@ -507,6 +621,225 @@ class ParentService:
         if len(linked_students) == 1:
             return self.db.query(User).filter(User.id == linked_students[0].student_id).first()
         return None
+
+    def _assistant_quiz_assignment_response(
+        self,
+        parent_id: int,
+        student: User,
+        request: ParentAssistantChatRequest,
+    ) -> dict:
+        subject = self._resolve_assistant_subject(request.message, request.subject_id)
+        if not subject:
+            subjects = self.db.query(Subject).order_by(Subject.name).all()
+            if len(subjects) == 1:
+                subject = subjects[0]
+            else:
+                return {
+                    "intent": "quiz_assignment",
+                    "answer": "Which subject should I use for the quiz? Select a subject, then ask me to assign it again.",
+                    "requires_subject": True,
+                    "suggestions": [f"Assign a 5 question medium {item.name} quiz" for item in subjects[:3]],
+                    "data": {
+                        "student_id": student.id,
+                        "subjects": [{"id": item.id, "name": item.name, "code": item.code} for item in subjects],
+                    },
+                }
+
+        grade = self._resolve_assistant_grade(subject.id, request.message, request.grade_id)
+        if not grade:
+            grades = self.db.query(Grade).filter(Grade.subject_id == subject.id).order_by(Grade.level).all()
+            if len(grades) == 1:
+                grade = grades[0]
+            else:
+                return {
+                    "intent": "quiz_assignment",
+                    "answer": "Which grade should I use for the quiz? Select a grade, then ask me to assign it again.",
+                    "requires_subject": False,
+                    "suggestions": [
+                        f"Assign a 5 question medium {subject.name} quiz for {item.display_name}"
+                        for item in grades[:3]
+                    ],
+                    "data": {
+                        "student_id": student.id,
+                        "subject_id": subject.id,
+                        "grades": [{"id": item.id, "name": item.display_name, "level": item.level} for item in grades],
+                    },
+                }
+
+        difficulty = self._parse_assignment_difficulty(request.message)
+        question_count = self._parse_assignment_question_count(request.message)
+        domain_ids = self._resolve_assignment_domain_ids(
+            message=request.message,
+            student_id=student.id,
+            subject_id=subject.id,
+            grade_id=grade.id if grade else None,
+        )
+        student_name = student.full_name or student.username
+        grade_label = grade.display_name if grade else "Selected grade"
+        focus_label = "weak topics" if self._message_requests_weak_topics(request.message) and domain_ids else subject.name
+        title = f"{focus_label.title()} Practice"
+
+        try:
+            assignment = self.create_quiz_assignment(
+                parent_id=parent_id,
+                request=QuizAssignmentCreateRequest(
+                    student_id=student.id,
+                    title=title[:150],
+                    description=f"Created by the parent assistant from: {request.message[:220]}",
+                    subject_id=subject.id,
+                    grade_id=grade.id if grade else None,
+                    domain_ids=domain_ids,
+                    difficulty=difficulty,
+                    question_count=question_count,
+                    generate_missing=True,
+                ),
+            )
+        except ValueError as exc:
+            return {
+                "intent": "quiz_assignment",
+                "answer": (
+                    f"I could not assign that quiz yet: {exc}\n\n"
+                    "Try a lower question count, mixed difficulty, or a broader subject/grade."
+                ),
+                "suggestions": [
+                    f"Assign a 3 question mixed {subject.name} quiz",
+                    "Show weak topics",
+                    "Show syllabus",
+                ],
+                "data": {
+                    "student_id": student.id,
+                    "subject_id": subject.id,
+                    "grade_id": grade.id if grade else None,
+                },
+            }
+        except (ConnectionError, TimeoutError, RuntimeError) as exc:
+            return {
+                "intent": "quiz_assignment",
+                "answer": (
+                    "I found that this quiz needs new AI-generated questions, but generation is not available right now. "
+                    f"Details: {exc}"
+                ),
+                "suggestions": [
+                    "Assign a 3 question mixed quiz",
+                    "Try existing questions only in Assign a Quiz",
+                    "Show weak topics",
+                ],
+                "data": {
+                    "student_id": student.id,
+                    "subject_id": subject.id,
+                    "grade_id": grade.id if grade else None,
+                },
+            }
+
+        generated_count = int(assignment.get("generated_questions", 0))
+        generation_text = (
+            f" I generated {generated_count} new question{'s' if generated_count != 1 else ''} to fill the quiz."
+            if generated_count > 0
+            else " I used existing unanswered questions."
+        )
+
+        return {
+            "intent": "quiz_assignment",
+            "answer": (
+                f"Done. I assigned {student_name} a {question_count}-question {difficulty} "
+                f"{subject.name} quiz for {grade_label}.{generation_text}"
+            ),
+            "suggestions": [
+                "Show weak topics",
+                "Assign another 5 question quiz",
+                "Show syllabus",
+            ],
+            "data": {
+                "student_id": student.id,
+                "assignment": self._assignment_chat_payload(assignment),
+                "generated_questions": generated_count,
+            },
+        }
+
+    def _parse_assignment_difficulty(self, message: str) -> str:
+        text = message.lower()
+        if any(term in text for term in ["easy", "warm", "simple", "basic"]):
+            return "easy"
+        if any(term in text for term in ["hard", "challeng", "advanced", "difficult"]):
+            return "hard"
+        if any(term in text for term in ["mixed", "mix", "varied"]):
+            return "mixed"
+        return "medium"
+
+    def _parse_assignment_question_count(self, message: str) -> int:
+        text = message.lower()
+        count_match = re.search(r"\b(\d{1,2})\s*(?:question|questions|problem|problems)\b", text)
+        if not count_match:
+            count_match = re.search(r"\b(?:quiz|practice)\s+(?:with|of)?\s*(\d{1,2})\b", text)
+        if not count_match:
+            return 5
+
+        return max(1, min(25, int(count_match.group(1))))
+
+    def _message_requests_weak_topics(self, message: str) -> bool:
+        text = message.lower()
+        return any(term in text for term in ["weak", "struggl", "mistake", "improve", "behind"])
+
+    def _resolve_assignment_domain_ids(
+        self,
+        message: str,
+        student_id: int,
+        subject_id: int,
+        grade_id: Optional[int],
+    ) -> list[int]:
+        text = message.lower()
+        query = self.db.query(Domain).filter(Domain.subject_id == subject_id)
+        if grade_id is not None:
+            query = query.join(Standard, Standard.domain_id == Domain.id).filter(Standard.grade_id == grade_id)
+
+        domains = query.distinct().all()
+        explicit_domain_ids = []
+        for domain in domains:
+            domain_name = domain.name.lower()
+            domain_code = domain.code.lower()
+            domain_words = [word for word in re.findall(r"[a-z]{4,}", domain_name)]
+            if (
+                domain_name in text
+                or re.search(rf"\b{re.escape(domain_code)}\b", text)
+                or any(word in text for word in domain_words)
+            ):
+                explicit_domain_ids.append(domain.id)
+
+        if explicit_domain_ids:
+            return explicit_domain_ids
+
+        if not self._message_requests_weak_topics(message):
+            return []
+
+        allowed_domain_ids = {domain.id for domain in domains}
+        weak_topics = sorted(
+            [
+                topic
+                for topic in self._get_student_domain_performance(student_id)
+                if topic["domain_id"] in allowed_domain_ids
+            ],
+            key=lambda topic: (topic["accuracy"], -topic["questions_attempted"], topic["domain_name"]),
+        )
+        return [topic["domain_id"] for topic in weak_topics[:2]]
+
+    def _assignment_chat_payload(self, assignment: dict) -> dict:
+        keys = [
+            "id",
+            "student_id",
+            "student_name",
+            "title",
+            "difficulty",
+            "status",
+            "question_count",
+            "answered_count",
+            "correct_count",
+            "generated_questions",
+            "subject_id",
+            "subject_name",
+            "grade_id",
+            "grade_name",
+        ]
+        return {key: assignment.get(key) for key in keys}
 
     def _assistant_learning_response(self, student: User, focus: str) -> dict:
         topics = self._get_student_domain_performance(student.id)
