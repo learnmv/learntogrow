@@ -11,7 +11,7 @@ from app.schemas.questions import (
     QuestionDBResponse
 )
 from app.services.adaptive import get_next_adaptive_question, update_theta_after_answer
-from app.models import AnsweredQuestion, Question, Standard, Domain, StudentDomainAbility
+from app.models import AnsweredQuestion, Question, Standard
 from app.routers.auth import get_current_user, require_role
 
 router = APIRouter(prefix="/questions", tags=["questions"])
@@ -185,33 +185,4 @@ def record_answer(
     return {
         "message": "Answer recorded successfully",
         "adaptive": theta_result,
-    }
-
-
-@router.get("/adaptive-domain", response_model=dict)
-def get_adaptive_domain_summary(
-    domain_id: int = Query(..., description="Domain ID"),
-    current_user: dict = Depends(require_role(["student"])),
-    db: Session = Depends(get_db)
-):
-    """Return the student's current theta and domain stats."""
-    ability_record = db.query(StudentDomainAbility).filter(
-        StudentDomainAbility.student_id == current_user["user_id"],
-        StudentDomainAbility.domain_id == domain_id,
-    ).first()
-
-    domain = db.query(Domain).filter(Domain.id == domain_id).first()
-    if not domain:
-        raise HTTPException(status_code=404, detail="Domain not found")
-
-    theta = float(ability_record.theta) if ability_record else 0.35
-    questions_attempted = ability_record.questions_attempted if ability_record else 0
-    correct_streak = ability_record.correct_streak if ability_record else 0
-
-    return {
-        "domain_id": domain_id,
-        "domain_name": domain.name,
-        "theta": theta,
-        "questions_attempted": questions_attempted,
-        "correct_streak": correct_streak,
     }

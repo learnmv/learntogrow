@@ -5,12 +5,12 @@ from typing import Optional
 from app.dependencies import get_db
 from app.services.student import StudentService
 from app.routers.auth import require_role
-from app.schemas.student import DailyGoalResponse, SkillMapDomainResponse
+from app.schemas.student import DailyGoalResponse, SkillMapDomainResponse, StudentProgressResponse
 
 router = APIRouter(prefix="/student", tags=["student"])
 
 
-@router.get("/progress")
+@router.get("/progress", response_model=StudentProgressResponse)
 def get_own_progress(
     current_user: dict = Depends(require_role(["student"])),
     db: Session = Depends(get_db)
