@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowRight, RotateCcw, CheckCircle, XCircle, RefreshCw, Target } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { cn, renderMathToHtml } from '../lib/utils'
+import { cn, getFriendlySkillLevel, renderMathToHtml } from '../lib/utils'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import { fetchAdaptiveQuestion, recordAdaptiveAnswer } from '../services/adaptive'
 import type { QuestionFromDB } from '../types/questions'
@@ -39,7 +39,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
       const question = await fetchAdaptiveQuestion(parseInt(domainId))
       setCurrentQuestion(question)
       setQuestionCount(prev => prev + 1)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load adaptive question:', err)
       const msg = err instanceof Error ? err.message : String(err)
       if (msg.includes('404') || msg.includes('No active questions')) {
@@ -173,7 +173,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-sage-100 rounded-lg">
                 <Target className="w-4 h-4 text-sage-600" />
                 <span className="text-sm font-display text-sage-700">
-                  Skill: {Math.round(theta * 100)}%
+                  Skill: {getFriendlySkillLevel(theta)}
                 </span>
               </div>
             )}

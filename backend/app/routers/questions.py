@@ -157,7 +157,7 @@ def record_answer(
         selected_answer=selected_answer,
         is_correct=is_correct,
     ).on_conflict_do_nothing(
-        constraint='answered_questions_student_id_question_id_key'
+        index_elements=["student_id", "question_id"]
     )
     db.execute(stmt)
 

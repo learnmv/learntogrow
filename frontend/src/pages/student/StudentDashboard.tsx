@@ -5,18 +5,9 @@ import { BookOpen, Play, Target, BarChart3, RotateCcw, Zap } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { SubjectSelector } from '../../components/ui/SubjectSelector'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
-import { getOwnProgress, fetchMistakeStandards } from '../../services/student'
-import { fetchDomainsBySubject } from '../../services/standards'
-import { fetchDomainTheta } from '../../services/adaptive'
-import type { StudentProgress } from '../../types/student'
-import type { Standard, Domain } from '../../types/standards'
-
-interface DomainProgress {
-  domain: Domain
-  theta: number
-  questions_attempted: number
-  correct_streak: number
-}
+import { getOwnProgress, fetchMistakeStandards, getDailyGoal, getSkillMap } from '../../services/student'
+import type { DailyGoal, SkillMapDomain, StudentProgress } from '../../types/student'
+import type { Standard } from '../../types/standards'
 
 export function StudentDashboard() {
   const { user } = useAuth()
@@ -24,10 +15,12 @@ export function StudentDashboard() {
   const [selectedSubject, setSelectedSubject] = useState<string>('')
   const [selectedGrade, setSelectedGrade] = useState<string>('')
   const [progress, setProgress] = useState<StudentProgress | null>(null)
+  const [dailyGoal, setDailyGoal] = useState<DailyGoal | null>(null)
   const [mistakes, setMistakes] = useState<Standard[]>([])
   const [loadingProgress, setLoadingProgress] = useState(true)
-  const [domains, setDomains] = useState<DomainProgress[]>([])
-  const [loadingDomains, setLoadingDomains] = useState(false)
+  const [loadingDailyGoal, setLoadingDailyGoal] = useState(true)
+  const [skillMap, setSkillMap] = useState<SkillMapDomain[]>([])
+  const [loadingSkillMap, setLoadingSkillMap] = useState(false)
 
   useEffect(() => {
     async function loadData() {
@@ -41,6 +34,20 @@ export function StudentDashboard() {
       }
     }
     loadData()
+  }, [])
+
+  useEffect(() => {
+    async function loadDailyGoal() {
+      try {
+        const goal = await getDailyGoal()
+        setDailyGoal(goal)
+      } catch {
+        setDailyGoal(null)
+      } finally {
+        setLoadingDailyGoal(false)
+      }
+    }
+    loadDailyGoal()
   }, [])
 
   const handleGradeSelect = useCallback((subjectId: string, gradeId: string) => {
@@ -69,46 +76,29 @@ export function StudentDashboard() {
     loadMistakes()
   }, [selectedSubject, selectedGrade])
 
-  // Fetch domains + adaptive progress when subject is selected
+  // Fetch the student-friendly skill map when subject/grade selection changes
   useEffect(() => {
-    if (!selectedSubject) {
-      setDomains([])
+    if (!selectedSubject || !selectedGrade) {
+      setSkillMap([])
       return
     }
 
-    async function loadDomains() {
-      setLoadingDomains(true)
+    async function loadSkillMap() {
+      setLoadingSkillMap(true)
       try {
-        const domainList = await fetchDomainsBySubject(parseInt(selectedSubject))
-        const progressData = await Promise.all(
-          domainList.map(async (domain) => {
-            try {
-              const thetaData = await fetchDomainTheta(domain.id)
-              return {
-                domain,
-                theta: thetaData.theta,
-                questions_attempted: thetaData.questions_attempted,
-                correct_streak: thetaData.correct_streak,
-              }
-            } catch {
-              return {
-                domain,
-                theta: 0.35,
-                questions_attempted: 0,
-                correct_streak: 0,
-              }
-            }
-          })
-        )
-        setDomains(progressData)
+        const domains = await getSkillMap({
+          subject_id: parseInt(selectedSubject),
+          grade_id: parseInt(selectedGrade),
+        })
+        setSkillMap(domains)
       } catch {
-        setDomains([])
+        setSkillMap([])
       } finally {
-        setLoadingDomains(false)
+        setLoadingSkillMap(false)
       }
     }
-    loadDomains()
-  }, [selectedSubject])
+    loadSkillMap()
+  }, [selectedSubject, selectedGrade])
 
   function handleStartQuiz() {
     if (selectedSubject && selectedGrade) {
@@ -129,6 +119,7 @@ export function StudentDashboard() {
   const displayName = user?.full_name || user?.username || 'Student'
   const canStartQuiz = selectedSubject !== '' && selectedGrade !== ''
   const hasMistakes = mistakes.length > 0
+  const recommendedSkill = skillMap.find((domain) => domain.recommended)
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -141,6 +132,8 @@ export function StudentDashboard() {
           Ready to keep learning? Pick a subject and grade to start a quiz.
         </p>
       </motion.div>
+
+      <DailyGoalCard goal={dailyGoal} loading={loadingDailyGoal} />
 
       {/* Quick Start */}
       <motion.div
@@ -185,8 +178,8 @@ export function StudentDashboard() {
         )}
       </motion.div>
 
-      {/* Adaptive Practice by Domain */}
-      {selectedSubject && (
+      {/* Skill Map */}
+      {canStartQuiz && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -194,25 +187,31 @@ export function StudentDashboard() {
           className="mb-8"
         >
           <h2 className="text-lg font-display font-semibold text-text mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-sand-600" />
-            Adaptive Practice
+            <Zap className="w-5 h-5 text-sage-600" />
+            Skill Map
           </h2>
-          {loadingDomains ? (
-            <LoadingSpinner text="Loading domains..." />
-          ) : domains.length === 0 ? (
-            <p className="text-text-muted font-body">No domains found for this subject.</p>
+          {loadingSkillMap ? (
+            <LoadingSpinner text="Loading skill map..." />
+          ) : skillMap.length === 0 ? (
+            <p className="text-text-muted font-body">No skill map found for this subject and grade.</p>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {domains.map(({ domain, theta, questions_attempted }) => (
-                <DomainCard
-                  key={domain.id}
-                  domain={domain}
-                  theta={theta}
-                  questions_attempted={questions_attempted}
-                  onPractice={() => handleAdaptivePractice(domain.id, domain.name)}
+            <>
+              {recommendedSkill && (
+                <RecommendedSkillCard
+                  domain={recommendedSkill}
+                  onPractice={() => handleAdaptivePractice(recommendedSkill.domain_id, recommendedSkill.domain_name)}
                 />
-              ))}
-            </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {skillMap.map((domain) => (
+                  <SkillDomainCard
+                    key={domain.domain_id}
+                    domain={domain}
+                    onPractice={() => handleAdaptivePractice(domain.domain_id, domain.domain_name)}
+                  />
+                ))}
+              </div>
+            </>
           )}
         </motion.div>
       )}
@@ -254,50 +253,140 @@ export function StudentDashboard() {
   )
 }
 
-interface DomainCardProps {
-  domain: Domain
-  theta: number
-  questions_attempted: number
+interface DailyGoalCardProps {
+  goal: DailyGoal | null
+  loading: boolean
+}
+
+function DailyGoalCard({ goal, loading }: DailyGoalCardProps) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.05 }}
+      className="bg-surface-elevated rounded-2xl p-6 shadow-sm border border-border mb-8"
+    >
+      <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-4">
+          <div className="p-3 rounded-xl bg-sage-100">
+            <Target className="w-6 h-6 text-sage-600" />
+          </div>
+          <div>
+            <p className="text-sm font-display font-medium text-text-muted">Today's Goal</p>
+            <h2 className="text-2xl font-display font-semibold text-text">
+              {loading ? 'Loading...' : goal?.completed ? 'Goal Complete' : `Answer ${goal?.target ?? 10} Questions`}
+            </h2>
+            <p className="mt-1 text-sm text-text-muted font-body">
+              {loading ? 'Checking your practice today.' : goal?.message ?? 'Start a quiz to begin.'}
+            </p>
+          </div>
+        </div>
+
+        <div className="min-w-52">
+          <div className="flex items-end justify-between mb-2">
+            <span className="text-3xl font-display font-bold text-text">
+              {goal?.answered_today ?? 0}
+            </span>
+            <span className="text-sm text-text-muted font-body">
+              / {goal?.target ?? 10}
+            </span>
+          </div>
+          <div className="h-3 bg-sage-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-sage-600 rounded-full transition-all duration-500"
+              style={{ width: `${Math.round((goal?.progress ?? 0) * 100)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-text-muted font-body">
+            {goal ? `${goal.correct_today} correct today` : 'Progress appears here'}
+          </p>
+        </div>
+      </div>
+    </motion.div>
+  )
+}
+
+interface RecommendedSkillCardProps {
+  domain: SkillMapDomain
   onPractice: () => void
 }
 
-function DomainCard({ domain, theta, questions_attempted, onPractice }: DomainCardProps) {
-  const thetaPct = Math.round(theta * 100)
-  const level = thetaPct < 40 ? 'Getting Started' : thetaPct < 70 ? 'Developing' : 'Proficient'
-  const colorClass = thetaPct < 40 ? 'bg-coral-500' : thetaPct < 70 ? 'bg-sand-500' : 'bg-sage-500'
+function RecommendedSkillCard({ domain, onPractice }: RecommendedSkillCardProps) {
+  return (
+    <div className="bg-sage-700 text-white rounded-2xl p-5 shadow-sm mb-4 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <div>
+        <p className="text-sm font-display font-medium text-sage-100">Recommended Next</p>
+        <h3 className="mt-1 text-2xl font-display font-semibold">{domain.domain_name}</h3>
+        <p className="mt-1 text-sm text-sage-100 font-body">{domain.recommendation_reason}</p>
+      </div>
+      <button
+        onClick={onPractice}
+        disabled={domain.active_questions === 0}
+        className="flex items-center justify-center gap-2 px-5 py-3 bg-white text-sage-700 rounded-xl font-display font-semibold hover:bg-sage-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        <Zap className="w-4 h-4" />
+        Practice
+      </button>
+    </div>
+  )
+}
+
+interface SkillDomainCardProps {
+  domain: SkillMapDomain
+  onPractice: () => void
+}
+
+function SkillDomainCard({ domain, onPractice }: SkillDomainCardProps) {
+  const progressPct = Math.round(domain.progress * 100)
+  const accuracyLabel = domain.accuracy == null ? 'New' : `${Math.round(domain.accuracy * 100)}%`
+  const styles = getLevelStyles(domain.level)
 
   return (
     <div className="bg-surface-elevated rounded-2xl p-5 shadow-sm border border-border flex flex-col gap-4">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="font-display font-semibold text-text">{domain.name}</p>
-          <p className="text-sm text-text-muted font-body">{domain.code}</p>
+          <p className="font-display font-semibold text-text">{domain.domain_name}</p>
+          <p className="text-sm text-text-muted font-body">{domain.domain_code}</p>
         </div>
-        <div className="px-2.5 py-1 rounded-lg bg-sage-100 text-sage-700 text-xs font-display font-medium">
-          {level}
+        <div className={`px-2.5 py-1 rounded-lg text-xs font-display font-medium ${styles.badge}`}>
+          {domain.level}
         </div>
       </div>
 
       <div className="space-y-1">
         <div className="flex justify-between text-xs text-text-muted font-body">
-          <span>Skill Level</span>
-          <span>{thetaPct}%</span>
+          <span>Progress</span>
+          <span>{progressPct}%</span>
         </div>
         <div className="h-2 bg-sage-100 rounded-full overflow-hidden">
           <div
-            className={`h-full ${colorClass} rounded-full transition-all duration-500`}
-            style={{ width: `${thetaPct}%` }}
+            className={`h-full ${styles.bar} rounded-full transition-all duration-500`}
+            style={{ width: `${progressPct}%` }}
           />
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-auto">
+      <p className="text-sm text-text-muted font-body min-h-10">{domain.level_description}</p>
+
+      <div className="grid grid-cols-2 gap-3 text-sm">
+        <div>
+          <p className="text-text-muted font-body">Attempted</p>
+          <p className="font-display font-semibold text-text">{domain.questions_attempted}</p>
+        </div>
+        <div>
+          <p className="text-text-muted font-body">Accuracy</p>
+          <p className="font-display font-semibold text-text">{accuracyLabel}</p>
+        </div>
+      </div>
+
+      <div className="mt-auto flex items-center justify-between gap-3">
         <span className="text-xs text-text-muted font-body">
-          {questions_attempted > 0 ? `${questions_attempted} attempted` : 'Not started'}
+          {domain.active_questions > 0 ? `${domain.active_questions} questions ready` : 'No questions yet'}
         </span>
         <button
           onClick={onPractice}
-          className="flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white rounded-lg font-display font-medium text-sm hover:bg-sage-700 transition-colors shadow-sm hover:shadow-md"
+          disabled={domain.active_questions === 0}
+          className="flex items-center gap-1.5 px-4 py-2 bg-sage-600 text-white rounded-lg font-display font-medium text-sm hover:bg-sage-700 transition-colors shadow-sm hover:shadow-md disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Zap className="w-3.5 h-3.5" />
           Practice
@@ -305,6 +394,22 @@ function DomainCard({ domain, theta, questions_attempted, onPractice }: DomainCa
       </div>
     </div>
   )
+}
+
+function getLevelStyles(level: string): { badge: string; bar: string } {
+  if (level === 'Mastered') {
+    return { badge: 'bg-sage-100 text-sage-800', bar: 'bg-sage-700' }
+  }
+  if (level === 'Strong') {
+    return { badge: 'bg-sage-100 text-sage-700', bar: 'bg-sage-600' }
+  }
+  if (level === 'Improving') {
+    return { badge: 'bg-coral-100 text-coral-700', bar: 'bg-coral-500' }
+  }
+  if (level === 'Building') {
+    return { badge: 'bg-sage-100 text-sage-700', bar: 'bg-sage-400' }
+  }
+  return { badge: 'bg-coral-100 text-coral-700', bar: 'bg-coral-400' }
 }
 
 interface ProgressStatCardProps {

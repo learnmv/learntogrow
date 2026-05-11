@@ -107,6 +107,18 @@ export function formatPercentage(value: number): string {
 }
 
 /**
+ * Converts internal adaptive ability into student-facing level text.
+ */
+export function getFriendlySkillLevel(theta: number): string {
+  const clamped = Math.max(0, Math.min(1, theta))
+  if (clamped < 0.26) return 'Getting Started'
+  if (clamped < 0.46) return 'Building'
+  if (clamped < 0.66) return 'Improving'
+  if (clamped < 0.86) return 'Strong'
+  return 'Mastered'
+}
+
+/**
  * Truncates text with ellipsis
  */
 export function truncate(text: string, maxLength: number): string {
