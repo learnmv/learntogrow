@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "deepseek-r1:1.5b"
     OLLAMA_TIMEOUT: int = 300
+    PARENT_ASSISTANT_MODEL: str = "gemma4:e4b"
+    PARENT_ASSISTANT_TIMEOUT: int = 120
 
     class Config:
         env_file = ".env"

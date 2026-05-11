@@ -27,6 +27,7 @@ from app.schemas.parent import (
     StudentDetailForParent,
 )
 from app.schemas.quiz_assignment import QuizAssignmentCreateRequest
+from app.services.parent_assistant_llm import ParentAssistantLLMService
 from app.services.questions import QuestionService
 from app.services.student import get_skill_level
 
@@ -552,12 +553,14 @@ class ParentService:
     def handle_assistant_chat(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
         """Handle parent assistant requests using deterministic learning and quiz tools."""
         message = request.message.strip()
-        intent = self._detect_assistant_intent(message)
+        plan = self._plan_assistant_request(parent_id, request)
+        intent = plan.get("intent") or self._detect_assistant_intent(message)
+        student_id = request.student_id or plan.get("student_id")
 
         if intent == "syllabus":
-            return self._assistant_syllabus_response(request)
+            return self._assistant_syllabus_response(request, plan)
 
-        student = self._resolve_assistant_student(parent_id, request.student_id)
+        student = self._resolve_assistant_student(parent_id, student_id)
         if not student:
             linked_students = self.get_linked_students(parent_id)
             if not linked_students:
@@ -582,13 +585,87 @@ class ParentService:
             }
 
         if intent == "quiz_assignment":
-            return self._assistant_quiz_assignment_response(parent_id, student, request)
+            return self._assistant_quiz_assignment_response(parent_id, student, request, plan)
         if intent == "strong_topics":
             return self._assistant_learning_response(student, focus="strong")
         if intent == "weak_topics":
             return self._assistant_learning_response(student, focus="weak")
 
         return self._assistant_learning_response(student, focus="summary")
+
+    def _plan_assistant_request(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
+        context = self._assistant_planner_context(parent_id, request)
+        plan = ParentAssistantLLMService().plan(request.message, context)
+        if not plan:
+            return {}
+
+        planned_student_id = plan.get("student_id")
+        if planned_student_id is not None and not self.can_view_student(parent_id, planned_student_id):
+            plan["student_id"] = None
+
+        return plan
+
+    def _assistant_planner_context(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
+        children = self.get_linked_students(parent_id)
+        subjects = self.db.query(Subject).order_by(Subject.name).all()
+        grades_query = self.db.query(Grade)
+        domains_query = self.db.query(Domain)
+
+        subject_id = request.subject_id
+        grade_id = request.grade_id
+        if subject_id is not None:
+            grades_query = grades_query.filter(Grade.subject_id == subject_id)
+            domains_query = domains_query.filter(Domain.subject_id == subject_id)
+
+        domains = domains_query.order_by(Domain.display_order, Domain.name).limit(50).all()
+        grades = grades_query.order_by(Grade.subject_id, Grade.level).limit(50).all()
+
+        if grade_id is not None:
+            domain_ids = [
+                row[0]
+                for row in self.db.query(func.distinct(Standard.domain_id))
+                .filter(Standard.grade_id == grade_id)
+                .all()
+            ]
+            domains = [domain for domain in domains if domain.id in set(domain_ids)]
+
+        return {
+            "selected": {
+                "student_id": request.student_id,
+                "subject_id": request.subject_id,
+                "grade_id": request.grade_id,
+            },
+            "children": [
+                {
+                    "student_id": child.student_id,
+                    "student_name": child.student_name,
+                    "student_username": child.student_username,
+                }
+                for child in children
+            ],
+            "subjects": [
+                {"id": subject.id, "name": subject.name, "code": subject.code}
+                for subject in subjects
+            ],
+            "grades": [
+                {
+                    "id": grade.id,
+                    "subject_id": grade.subject_id,
+                    "level": grade.level,
+                    "display_name": grade.display_name,
+                }
+                for grade in grades
+            ],
+            "domains": [
+                {
+                    "id": domain.id,
+                    "subject_id": domain.subject_id,
+                    "code": domain.code,
+                    "name": domain.name,
+                }
+                for domain in domains
+            ],
+        }
 
     def _detect_assistant_intent(self, message: str) -> str:
         text = message.lower()
@@ -627,8 +704,9 @@ class ParentService:
         parent_id: int,
         student: User,
         request: ParentAssistantChatRequest,
+        plan: Optional[dict] = None,
     ) -> dict:
-        subject = self._resolve_assistant_subject(request.message, request.subject_id)
+        subject = self._resolve_assistant_subject(request.message, request.subject_id, plan)
         if not subject:
             subjects = self.db.query(Subject).order_by(Subject.name).all()
             if len(subjects) == 1:
@@ -645,7 +723,7 @@ class ParentService:
                     },
                 }
 
-        grade = self._resolve_assistant_grade(subject.id, request.message, request.grade_id)
+        grade = self._resolve_assistant_grade(subject.id, request.message, request.grade_id, plan)
         if not grade:
             grades = self.db.query(Grade).filter(Grade.subject_id == subject.id).order_by(Grade.level).all()
             if len(grades) == 1:
@@ -666,13 +744,14 @@ class ParentService:
                     },
                 }
 
-        difficulty = self._parse_assignment_difficulty(request.message)
-        question_count = self._parse_assignment_question_count(request.message)
+        difficulty = self._parse_assignment_difficulty(request.message, plan)
+        question_count = self._parse_assignment_question_count(request.message, plan)
         domain_ids = self._resolve_assignment_domain_ids(
             message=request.message,
             student_id=student.id,
             subject_id=subject.id,
             grade_id=grade.id if grade else None,
+            plan=plan,
         )
         student_name = student.full_name or student.username
         grade_label = grade.display_name if grade else "Selected grade"
@@ -756,7 +835,11 @@ class ParentService:
             },
         }
 
-    def _parse_assignment_difficulty(self, message: str) -> str:
+    def _parse_assignment_difficulty(self, message: str, plan: Optional[dict] = None) -> str:
+        planned_difficulty = plan.get("difficulty") if plan else None
+        if planned_difficulty in {"easy", "medium", "hard", "mixed"}:
+            return planned_difficulty
+
         text = message.lower()
         if any(term in text for term in ["easy", "warm", "simple", "basic"]):
             return "easy"
@@ -766,7 +849,11 @@ class ParentService:
             return "mixed"
         return "medium"
 
-    def _parse_assignment_question_count(self, message: str) -> int:
+    def _parse_assignment_question_count(self, message: str, plan: Optional[dict] = None) -> int:
+        planned_count = plan.get("question_count") if plan else None
+        if isinstance(planned_count, int):
+            return max(1, min(25, planned_count))
+
         text = message.lower()
         count_match = re.search(r"\b(\d{1,2})\s*(?:question|questions|problem|problems)\b", text)
         if not count_match:
@@ -786,6 +873,7 @@ class ParentService:
         student_id: int,
         subject_id: int,
         grade_id: Optional[int],
+        plan: Optional[dict] = None,
     ) -> list[int]:
         text = message.lower()
         query = self.db.query(Domain).filter(Domain.subject_id == subject_id)
@@ -793,15 +881,28 @@ class ParentService:
             query = query.join(Standard, Standard.domain_id == Domain.id).filter(Standard.grade_id == grade_id)
 
         domains = query.distinct().all()
+        domain_ids = [domain.id for domain in domains]
+
+        planned_domain_ids = [
+            domain_id
+            for domain_id in (plan.get("domain_ids", []) if plan else [])
+            if domain_id in domain_ids
+        ]
+        if planned_domain_ids:
+            return planned_domain_ids
+
         explicit_domain_ids = []
+        planned_domain_names = [name.lower() for name in (plan.get("domain_names", []) if plan else [])]
         for domain in domains:
             domain_name = domain.name.lower()
             domain_code = domain.code.lower()
             domain_words = [word for word in re.findall(r"[a-z]{4,}", domain_name)]
             if (
                 domain_name in text
+                or domain_name in planned_domain_names
                 or re.search(rf"\b{re.escape(domain_code)}\b", text)
                 or any(word in text for word in domain_words)
+                or any(name in domain_name for name in planned_domain_names)
             ):
                 explicit_domain_ids.append(domain.id)
 
@@ -809,7 +910,9 @@ class ParentService:
             return explicit_domain_ids
 
         if not self._message_requests_weak_topics(message):
-            return []
+            focus = (plan.get("focus") if plan else None) or ""
+            if focus != "weak_topics":
+                return []
 
         allowed_domain_ids = {domain.id for domain in domains}
         weak_topics = sorted(
@@ -985,8 +1088,8 @@ class ParentService:
 
         return "\n".join(lines)
 
-    def _assistant_syllabus_response(self, request: ParentAssistantChatRequest) -> dict:
-        subject = self._resolve_assistant_subject(request.message, request.subject_id)
+    def _assistant_syllabus_response(self, request: ParentAssistantChatRequest, plan: Optional[dict] = None) -> dict:
+        subject = self._resolve_assistant_subject(request.message, request.subject_id, plan)
         if not subject:
             subjects = self.db.query(Subject).order_by(Subject.name).all()
             return {
@@ -1002,7 +1105,7 @@ class ParentService:
                 },
             }
 
-        grade = self._resolve_assistant_grade(subject.id, request.message, request.grade_id)
+        grade = self._resolve_assistant_grade(subject.id, request.message, request.grade_id, plan)
         domains = self._get_syllabus_domains(subject.id, grade.id if grade else None)
         subject_label = subject.name
         grade_label = f" for {grade.display_name}" if grade else ""
@@ -1052,23 +1155,66 @@ class ParentService:
             },
         }
 
-    def _resolve_assistant_subject(self, message: str, subject_id: Optional[int]) -> Optional[Subject]:
+    def _resolve_assistant_subject(
+        self,
+        message: str,
+        subject_id: Optional[int],
+        plan: Optional[dict] = None,
+    ) -> Optional[Subject]:
         if subject_id is not None:
             return self.db.query(Subject).filter(Subject.id == subject_id).first()
 
+        planned_subject_id = plan.get("subject_id") if plan else None
+        if planned_subject_id is not None:
+            subject = self.db.query(Subject).filter(Subject.id == planned_subject_id).first()
+            if subject:
+                return subject
+
+        planned_subject_name = (plan.get("subject_name") or "").lower() if plan else ""
         text = message.lower()
         subjects = self.db.query(Subject).all()
         for subject in subjects:
-            if subject.name.lower() in text or subject.code.lower() in text:
+            subject_name = subject.name.lower()
+            subject_code = subject.code.lower()
+            if (
+                subject_name in text
+                or subject_code in text
+                or (planned_subject_name and planned_subject_name in subject_name)
+                or (planned_subject_name and subject_name in planned_subject_name)
+            ):
                 return subject
         return None
 
-    def _resolve_assistant_grade(self, subject_id: int, message: str, grade_id: Optional[int]) -> Optional[Grade]:
+    def _resolve_assistant_grade(
+        self,
+        subject_id: int,
+        message: str,
+        grade_id: Optional[int],
+        plan: Optional[dict] = None,
+    ) -> Optional[Grade]:
         if grade_id is not None:
             return self.db.query(Grade).filter(
                 Grade.id == grade_id,
                 Grade.subject_id == subject_id,
             ).first()
+
+        planned_grade_id = plan.get("grade_id") if plan else None
+        if planned_grade_id is not None:
+            grade = self.db.query(Grade).filter(
+                Grade.id == planned_grade_id,
+                Grade.subject_id == subject_id,
+            ).first()
+            if grade:
+                return grade
+
+        planned_grade_level = plan.get("grade_level") if plan else None
+        if planned_grade_level is not None:
+            grade = self.db.query(Grade).filter(
+                Grade.subject_id == subject_id,
+                Grade.level == planned_grade_level,
+            ).first()
+            if grade:
+                return grade
 
         grade_match = re.search(r"\bgrade\s*(\d+)\b|\b(\d+)(?:st|nd|rd|th)\s*grade\b", message.lower())
         if not grade_match:
