@@ -16,6 +16,9 @@ from app.models import (
     Domain,
     Cluster,
     StudentDomainAbility,
+    Question,
+    QuizAssignment,
+    QuizAssignmentQuestion,
 )
 from app.schemas.parent import (
     ParentAssistantChatRequest,
@@ -23,6 +26,7 @@ from app.schemas.parent import (
     StudentProgressSummary,
     StudentDetailForParent,
 )
+from app.schemas.quiz_assignment import QuizAssignmentCreateRequest
 from app.services.student import get_skill_level
 
 
@@ -288,6 +292,157 @@ class ParentService:
         ).first()
 
         return link is not None
+
+    def create_quiz_assignment(
+        self,
+        parent_id: int,
+        request: QuizAssignmentCreateRequest,
+    ) -> dict:
+        """Create a parent-assigned quiz from existing active questions."""
+        if not self.can_view_student(parent_id, request.student_id):
+            raise ValueError("You are not linked to this student or the link is pending approval")
+
+        questions = self._select_assignment_questions(request)
+        if len(questions) < request.question_count:
+            raise ValueError(
+                f"Only {len(questions)} matching unanswered questions are available. "
+                "Try a lower question count, mixed difficulty, or broader filters."
+            )
+
+        assignment = QuizAssignment(
+            parent_id=parent_id,
+            student_id=request.student_id,
+            subject_id=request.subject_id,
+            grade_id=request.grade_id,
+            title=request.title,
+            description=request.description,
+            difficulty=request.difficulty,
+            status="assigned",
+            question_count=len(questions),
+            due_at=request.due_at,
+        )
+        self.db.add(assignment)
+        self.db.flush()
+
+        for index, question in enumerate(questions):
+            self.db.add(QuizAssignmentQuestion(
+                assignment_id=assignment.id,
+                question_id=question.id,
+                order_index=index,
+            ))
+
+        self.db.commit()
+        self.db.refresh(assignment)
+        return self.get_quiz_assignment_for_parent(parent_id, assignment.id)
+
+    def get_quiz_assignments_for_parent(self, parent_id: int) -> list[dict]:
+        assignments = (
+            self.db.query(QuizAssignment)
+            .filter(QuizAssignment.parent_id == parent_id)
+            .order_by(QuizAssignment.created_at.desc())
+            .all()
+        )
+        return [self._serialize_assignment(assignment) for assignment in assignments]
+
+    def get_quiz_assignment_for_parent(self, parent_id: int, assignment_id: int) -> dict:
+        assignment = self.db.query(QuizAssignment).filter(
+            QuizAssignment.id == assignment_id,
+            QuizAssignment.parent_id == parent_id,
+        ).first()
+        if not assignment:
+            raise ValueError("Quiz assignment not found")
+        return self._serialize_assignment(assignment, include_questions=True)
+
+    def _select_assignment_questions(self, request: QuizAssignmentCreateRequest) -> list[Question]:
+        answered_subquery = (
+            self.db.query(AnsweredQuestion.question_id)
+            .filter(AnsweredQuestion.student_id == request.student_id)
+            .subquery()
+        )
+
+        query = (
+            self.db.query(Question)
+            .join(Standard, Question.standard_id == Standard.id)
+            .join(Domain, Standard.domain_id == Domain.id)
+            .filter(
+                Question.is_active == True,
+                Question.question_type == "multiple_choice",
+                ~Question.id.in_(answered_subquery),
+            )
+        )
+
+        if request.subject_id is not None:
+            query = query.filter(Domain.subject_id == request.subject_id)
+        if request.grade_id is not None:
+            query = query.filter(Standard.grade_id == request.grade_id)
+        if request.domain_ids:
+            query = query.filter(Standard.domain_id.in_(request.domain_ids))
+        if request.standard_ids:
+            query = query.filter(Standard.id.in_(request.standard_ids))
+
+        if request.difficulty == "easy":
+            query = query.filter(Question.difficulty <= 0.4)
+        elif request.difficulty == "medium":
+            query = query.filter(Question.difficulty >= 0.35, Question.difficulty <= 0.7)
+        elif request.difficulty == "hard":
+            query = query.filter(Question.difficulty >= 0.65)
+
+        return query.order_by(func.random()).limit(request.question_count).all()
+
+    def _serialize_assignment(self, assignment: QuizAssignment, include_questions: bool = False) -> dict:
+        question_ids = [item.question_id for item in assignment.assignment_questions]
+        answer_rows = []
+        if question_ids:
+            answer_rows = self.db.query(AnsweredQuestion).filter(
+                AnsweredQuestion.student_id == assignment.student_id,
+                AnsweredQuestion.question_id.in_(question_ids),
+            ).all()
+
+        answered_count = len(answer_rows)
+        correct_count = sum(1 for answer in answer_rows if answer.is_correct)
+        student_name = None
+        if assignment.student:
+            student_name = assignment.student.full_name or assignment.student.username
+
+        data = {
+            "id": assignment.id,
+            "parent_id": assignment.parent_id,
+            "student_id": assignment.student_id,
+            "student_name": student_name,
+            "title": assignment.title,
+            "description": assignment.description,
+            "difficulty": assignment.difficulty,
+            "status": assignment.status,
+            "question_count": assignment.question_count,
+            "answered_count": answered_count,
+            "correct_count": correct_count,
+            "subject_id": assignment.subject_id,
+            "subject_name": assignment.subject.name if assignment.subject else None,
+            "grade_id": assignment.grade_id,
+            "grade_name": assignment.grade.display_name if assignment.grade else None,
+            "created_at": assignment.created_at,
+            "started_at": assignment.started_at,
+            "completed_at": assignment.completed_at,
+            "due_at": assignment.due_at,
+        }
+
+        if include_questions:
+            data["questions"] = [
+                item.question
+                for item in assignment.assignment_questions
+                if item.question is not None
+            ]
+            data["answers"] = [
+                {
+                    "question_id": answer.question_id,
+                    "selected_answer": answer.selected_answer,
+                    "is_correct": answer.is_correct,
+                    "answered_at": answer.answered_at,
+                }
+                for answer in answer_rows
+            ]
+
+        return data
 
     def handle_assistant_chat(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
         """Handle Phase 1 parent assistant requests using deterministic data tools."""

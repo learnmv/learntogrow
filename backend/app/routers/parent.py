@@ -4,14 +4,18 @@ from typing import List
 
 from app.dependencies import get_db
 from app.services import ParentService
-from app.routers.auth import get_current_user, require_role
+from app.routers.auth import require_role
 from app.schemas.parent import (
     ParentStudentLinkResponse,
     ParentStudentLinkCreate,
     ParentAssistantChatRequest,
     ParentAssistantChatResponse,
-    StudentProgressSummary,
     StudentDetailForParent,
+)
+from app.schemas.quiz_assignment import (
+    QuizAssignmentCreateRequest,
+    QuizAssignmentDetail,
+    QuizAssignmentSummary,
 )
 
 router = APIRouter(prefix="/parent", tags=["parent"])
@@ -86,3 +90,44 @@ def chat_with_parent_assistant(
         parent_id=current_user["user_id"],
         request=request,
     )
+
+
+@router.post("/quiz-assignments", response_model=QuizAssignmentDetail, status_code=status.HTTP_201_CREATED)
+def create_quiz_assignment(
+    request: QuizAssignmentCreateRequest,
+    current_user: dict = Depends(require_role(["parent"])),
+    db: Session = Depends(get_db)
+):
+    """Create a quiz assignment for a linked child using existing questions."""
+    parent_service = ParentService(db)
+    try:
+        return parent_service.create_quiz_assignment(
+            parent_id=current_user["user_id"],
+            request=request,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/quiz-assignments", response_model=List[QuizAssignmentSummary])
+def get_quiz_assignments(
+    current_user: dict = Depends(require_role(["parent"])),
+    db: Session = Depends(get_db)
+):
+    """List quiz assignments created by the current parent."""
+    parent_service = ParentService(db)
+    return parent_service.get_quiz_assignments_for_parent(current_user["user_id"])
+
+
+@router.get("/quiz-assignments/{assignment_id}", response_model=QuizAssignmentDetail)
+def get_quiz_assignment(
+    assignment_id: int,
+    current_user: dict = Depends(require_role(["parent"])),
+    db: Session = Depends(get_db)
+):
+    """Get a quiz assignment created by the current parent."""
+    parent_service = ParentService(db)
+    try:
+        return parent_service.get_quiz_assignment_for_parent(current_user["user_id"], assignment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))

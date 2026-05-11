@@ -1,13 +1,20 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { BookOpen, Play, Target, BarChart3, RotateCcw, Zap } from 'lucide-react'
+import { ArrowRight, BookOpen, ClipboardList, Play, Target, BarChart3, RotateCcw, Zap } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { SubjectSelector } from '../../components/ui/SubjectSelector'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
-import { getOwnProgress, fetchMistakeStandards, getDailyGoal, getSkillMap } from '../../services/student'
+import {
+  getOwnProgress,
+  fetchMistakeStandards,
+  getDailyGoal,
+  getSkillMap,
+  getAssignedQuizzes,
+} from '../../services/student'
 import type { DailyGoal, SkillMapDomain, StudentProgress } from '../../types/student'
 import type { Standard } from '../../types/standards'
+import type { QuizAssignmentSummary } from '../../types/quizAssignment'
 
 export function StudentDashboard() {
   const { user } = useAuth()
@@ -21,6 +28,8 @@ export function StudentDashboard() {
   const [loadingDailyGoal, setLoadingDailyGoal] = useState(true)
   const [skillMap, setSkillMap] = useState<SkillMapDomain[]>([])
   const [loadingSkillMap, setLoadingSkillMap] = useState(false)
+  const [assignments, setAssignments] = useState<QuizAssignmentSummary[]>([])
+  const [loadingAssignments, setLoadingAssignments] = useState(true)
 
   useEffect(() => {
     async function loadData() {
@@ -48,6 +57,20 @@ export function StudentDashboard() {
       }
     }
     loadDailyGoal()
+  }, [])
+
+  useEffect(() => {
+    async function loadAssignments() {
+      try {
+        const data = await getAssignedQuizzes()
+        setAssignments(data)
+      } catch {
+        setAssignments([])
+      } finally {
+        setLoadingAssignments(false)
+      }
+    }
+    loadAssignments()
   }, [])
 
   const handleGradeSelect = useCallback((subjectId: string, gradeId: string) => {
@@ -134,6 +157,12 @@ export function StudentDashboard() {
       </motion.div>
 
       <DailyGoalCard goal={dailyGoal} loading={loadingDailyGoal} />
+
+      <AssignedQuizzesSection
+        assignments={assignments}
+        loading={loadingAssignments}
+        onOpen={(assignmentId) => navigate(`/student/assigned-quiz/${assignmentId}`)}
+      />
 
       {/* Quick Start */}
       <motion.div
@@ -250,6 +279,106 @@ export function StudentDashboard() {
         )}
       </motion.div>
     </div>
+  )
+}
+
+interface AssignedQuizzesSectionProps {
+  assignments: QuizAssignmentSummary[]
+  loading: boolean
+  onOpen: (assignmentId: number) => void
+}
+
+function AssignedQuizzesSection({ assignments, loading, onOpen }: AssignedQuizzesSectionProps) {
+  const visibleAssignments = assignments.slice(0, 4)
+
+  if (loading) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.08 }}
+        className="bg-surface-elevated rounded-2xl p-6 shadow-sm border border-border mb-8"
+      >
+        <div className="flex items-center gap-3 text-text-muted">
+          <div className="w-5 h-5 border-2 border-sage-200 border-t-sage-600 rounded-full animate-spin" />
+          <span className="font-display">Checking assigned quizzes...</span>
+        </div>
+      </motion.div>
+    )
+  }
+
+  if (visibleAssignments.length === 0) {
+    return null
+  }
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.08 }}
+      className="mb-8"
+    >
+      <div className="flex items-center gap-2 mb-4">
+        <ClipboardList className="w-5 h-5 text-sage-600" />
+        <h2 className="text-lg font-display font-semibold text-text">Assigned Quizzes</h2>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {visibleAssignments.map((assignment) => {
+          const progress = assignment.question_count > 0
+            ? Math.min(assignment.answered_count / assignment.question_count, 1)
+            : 0
+          const statusLabel = assignment.status.replace('_', ' ')
+          const buttonLabel = assignment.status === 'completed'
+            ? 'Review'
+            : assignment.status === 'in_progress'
+              ? 'Continue'
+              : 'Start'
+
+          return (
+            <button
+              key={assignment.id}
+              onClick={() => onOpen(assignment.id)}
+              className="bg-surface-elevated rounded-2xl border border-border p-5 text-left shadow-sm hover:border-sage-300 hover:shadow-md transition-all"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="font-display font-semibold text-text">{assignment.title}</p>
+                  <p className="mt-1 text-sm text-text-muted font-body">
+                    {assignment.subject_name || 'Any subject'} - {assignment.question_count} questions
+                  </p>
+                </div>
+                <span className="shrink-0 px-2.5 py-1 rounded-lg bg-sage-100 text-sage-700 text-xs font-display font-medium capitalize">
+                  {statusLabel}
+                </span>
+              </div>
+
+              <div className="mt-4">
+                <div className="flex justify-between text-xs text-text-muted font-body mb-1">
+                  <span>{assignment.answered_count} answered</span>
+                  <span>{assignment.correct_count} correct</span>
+                </div>
+                <div className="h-2 bg-sage-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-sage-600 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.round(progress * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <span className="text-xs text-text-muted font-body capitalize">
+                  {assignment.difficulty} difficulty
+                </span>
+                <span className="inline-flex items-center gap-1 text-sm font-display font-semibold text-sage-700">
+                  {buttonLabel}
+                  <ArrowRight className="w-4 h-4" />
+                </span>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </motion.section>
   )
 }
 

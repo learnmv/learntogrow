@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Users, Link2, GraduationCap, Loader2, UserPlus, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { ParentAssistant } from '../../components/parent/ParentAssistant'
+import { QuizAssignmentPanel } from '../../components/parent/QuizAssignmentPanel'
 import { getLinkedChildren } from '../../services/parent'
 import type { ParentStudentLink } from '../../types/parent'
 
@@ -58,6 +59,10 @@ export function ParentDashboard() {
       </div>
 
       <ParentAssistant childrenList={children} />
+
+      {!loading && !error && children.length > 0 && (
+        <QuizAssignmentPanel childrenList={children} />
+      )}
 
       {/* Action Bar */}
       <div className="flex items-center justify-between mb-6">

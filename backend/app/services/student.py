@@ -4,7 +4,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, Integer
 
-from app.models import AnsweredQuestion, Standard, Domain, Question, StudentDomainAbility
+from app.models import AnsweredQuestion, Standard, Domain, Question, StudentDomainAbility, QuizAssignment
 
 logger = logging.getLogger(__name__)
 
@@ -281,3 +281,114 @@ class StudentService:
             }
             for s in standards
         ]
+
+    def get_quiz_assignments(self, student_id: int) -> List[dict]:
+        """Get assigned quizzes for a student."""
+        assignments = (
+            self.db.query(QuizAssignment)
+            .filter(QuizAssignment.student_id == student_id)
+            .order_by(QuizAssignment.created_at.desc())
+            .all()
+        )
+        return [self._serialize_assignment(assignment) for assignment in assignments]
+
+    def get_quiz_assignment(self, student_id: int, assignment_id: int) -> dict:
+        """Get a quiz assignment with its questions."""
+        assignment = self.db.query(QuizAssignment).filter(
+            QuizAssignment.id == assignment_id,
+            QuizAssignment.student_id == student_id,
+        ).first()
+        if not assignment:
+            raise ValueError("Quiz assignment not found")
+        return self._serialize_assignment(assignment, include_questions=True)
+
+    def start_quiz_assignment(self, student_id: int, assignment_id: int) -> dict:
+        """Mark a quiz assignment as started."""
+        assignment = self.db.query(QuizAssignment).filter(
+            QuizAssignment.id == assignment_id,
+            QuizAssignment.student_id == student_id,
+        ).first()
+        if not assignment:
+            raise ValueError("Quiz assignment not found")
+
+        if assignment.status == "assigned":
+            assignment.status = "in_progress"
+            assignment.started_at = datetime.utcnow()
+            self.db.commit()
+            self.db.refresh(assignment)
+
+        return self._serialize_assignment(assignment, include_questions=True)
+
+    def complete_quiz_assignment(self, student_id: int, assignment_id: int) -> dict:
+        """Mark a quiz assignment as completed."""
+        assignment = self.db.query(QuizAssignment).filter(
+            QuizAssignment.id == assignment_id,
+            QuizAssignment.student_id == student_id,
+        ).first()
+        if not assignment:
+            raise ValueError("Quiz assignment not found")
+
+        assignment.status = "completed"
+        assignment.completed_at = datetime.utcnow()
+        self.db.commit()
+        self.db.refresh(assignment)
+
+        return self._serialize_assignment(assignment, include_questions=True)
+
+    def _serialize_assignment(self, assignment: QuizAssignment, include_questions: bool = False) -> dict:
+        question_ids = [item.question_id for item in assignment.assignment_questions]
+        answer_rows = []
+        if question_ids:
+            answer_rows = self.db.query(AnsweredQuestion).filter(
+                AnsweredQuestion.student_id == assignment.student_id,
+                AnsweredQuestion.question_id.in_(question_ids),
+            ).all()
+
+        answered_count = len(answer_rows)
+        correct_count = sum(1 for answer in answer_rows if answer.is_correct)
+        status = assignment.status
+        if status != "completed" and assignment.question_count > 0 and answered_count >= assignment.question_count:
+            status = "completed"
+        student_name = None
+        if assignment.student:
+            student_name = assignment.student.full_name or assignment.student.username
+
+        data = {
+            "id": assignment.id,
+            "parent_id": assignment.parent_id,
+            "student_id": assignment.student_id,
+            "student_name": student_name,
+            "title": assignment.title,
+            "description": assignment.description,
+            "difficulty": assignment.difficulty,
+            "status": status,
+            "question_count": assignment.question_count,
+            "answered_count": answered_count,
+            "correct_count": correct_count,
+            "subject_id": assignment.subject_id,
+            "subject_name": assignment.subject.name if assignment.subject else None,
+            "grade_id": assignment.grade_id,
+            "grade_name": assignment.grade.display_name if assignment.grade else None,
+            "created_at": assignment.created_at,
+            "started_at": assignment.started_at,
+            "completed_at": assignment.completed_at,
+            "due_at": assignment.due_at,
+        }
+
+        if include_questions:
+            data["questions"] = [
+                item.question
+                for item in assignment.assignment_questions
+                if item.question is not None
+            ]
+            data["answers"] = [
+                {
+                    "question_id": answer.question_id,
+                    "selected_answer": answer.selected_answer,
+                    "is_correct": answer.is_correct,
+                    "answered_at": answer.answered_at,
+                }
+                for answer in answer_rows
+            ]
+
+        return data
