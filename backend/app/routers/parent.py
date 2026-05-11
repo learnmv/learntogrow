@@ -8,6 +8,8 @@ from app.routers.auth import get_current_user, require_role
 from app.schemas.parent import (
     ParentStudentLinkResponse,
     ParentStudentLinkCreate,
+    ParentAssistantChatRequest,
+    ParentAssistantChatResponse,
     StudentProgressSummary,
     StudentDetailForParent,
 )
@@ -70,3 +72,17 @@ def get_child_progress(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
         )
+
+
+@router.post("/assistant/chat", response_model=ParentAssistantChatResponse)
+def chat_with_parent_assistant(
+    request: ParentAssistantChatRequest,
+    current_user: dict = Depends(require_role(["parent"])),
+    db: Session = Depends(get_db)
+):
+    """Ask the parent assistant about linked children or curriculum syllabus."""
+    parent_service = ParentService(db)
+    return parent_service.handle_assistant_chat(
+        parent_id=current_user["user_id"],
+        request=request,
+    )

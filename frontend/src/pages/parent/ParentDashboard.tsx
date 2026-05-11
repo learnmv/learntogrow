@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Users, Link2, GraduationCap, Loader2, UserPlus, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { ParentAssistant } from '../../components/parent/ParentAssistant'
 import { getLinkedChildren } from '../../services/parent'
 import type { ParentStudentLink } from '../../types/parent'
 
@@ -42,7 +43,7 @@ export function ParentDashboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
@@ -55,6 +56,8 @@ export function ParentDashboard() {
           View your linked children and monitor their learning progress.
         </p>
       </div>
+
+      <ParentAssistant childrenList={children} />
 
       {/* Action Bar */}
       <div className="flex items-center justify-between mb-6">

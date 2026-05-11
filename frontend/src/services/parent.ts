@@ -4,6 +4,8 @@ import type {
   ParentStudentLink,
   LinkRequestData,
   LinkRequestResponse,
+  ParentAssistantChatRequest,
+  ParentAssistantChatResponse,
   StudentDetailForParent,
 } from '../types/parent'
 
@@ -17,4 +19,12 @@ export async function requestStudentLink(data: LinkRequestData): Promise<LinkReq
 
 export async function getChildProgress(studentId: number): Promise<StudentDetailForParent> {
   return get<StudentDetailForParent>(`/parent/child/${studentId}/progress`, { headers: getAuthHeaders() })
+}
+
+export async function sendParentAssistantMessage(
+  data: ParentAssistantChatRequest
+): Promise<ParentAssistantChatResponse> {
+  return post<ParentAssistantChatResponse>('/parent/assistant/chat', data, {
+    headers: getAuthHeaders(),
+  })
 }

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
 
@@ -53,7 +53,7 @@ class StudentProgressSummary(BaseModel):
     total_attempts: int
     average_score: Optional[float] = None
     last_attempt_at: Optional[datetime] = None
-    recent_attempts: list = []
+    recent_attempts: list = Field(default_factory=list)
 
     class Config:
         from_attributes = True
@@ -68,7 +68,25 @@ class StudentDetailForParent(BaseModel):
     total_attempts: int
     average_score: Optional[float] = None
     standards_attempted: int
-    recent_attempts: list = []
+    recent_attempts: list = Field(default_factory=list)
 
     class Config:
         from_attributes = True
+
+
+class ParentAssistantChatRequest(BaseModel):
+    """Parent assistant chat request with optional UI-selected context."""
+    message: str = Field(..., min_length=1, max_length=1000)
+    student_id: Optional[int] = None
+    subject_id: Optional[int] = None
+    grade_id: Optional[int] = None
+
+
+class ParentAssistantChatResponse(BaseModel):
+    """Parent assistant response for Phase 1 deterministic tools."""
+    intent: str
+    answer: str
+    requires_student: bool = False
+    requires_subject: bool = False
+    suggestions: list[str] = Field(default_factory=list)
+    data: dict[str, Any] = Field(default_factory=dict)
