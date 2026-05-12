@@ -564,6 +564,25 @@ class ParentService:
             role="parent",
             content=message,
         )
+        if self._is_assistant_greeting(message):
+            answer = self._assistant_greeting_response(parent_id)
+            self._add_assistant_message(
+                thread_id=thread.id,
+                role="assistant",
+                content=answer,
+                intent="conversation",
+            )
+            return {
+                "intent": "conversation",
+                "answer": answer,
+                "thread_id": thread.id,
+                "tool_name": None,
+                "requires_student": False,
+                "requires_subject": False,
+                "suggestions": ["Show weak topics", "Show strong topics", "Show syllabus"],
+                "data": {},
+            }
+
         context = self._assistant_planner_context(parent_id, request, thread.id)
         tool_registry = ParentAssistantToolRegistry(self, parent_id)
         tool_call = ParentAssistantLLMService().plan_tool_call(
@@ -865,6 +884,34 @@ class ParentService:
         if intent == "weak_topics":
             return {"tool_name": "get_weak_topics", "arguments": arguments, "confidence": 0.5}
         return {"tool_name": "get_learning_summary", "arguments": arguments, "confidence": 0.5}
+
+    def _is_assistant_greeting(self, message: str) -> bool:
+        text = message.strip().lower().strip("!.?, ")
+        greetings = {
+            "hi",
+            "hello",
+            "hey",
+            "hey there",
+            "good morning",
+            "good afternoon",
+            "good evening",
+        }
+        return text in greetings
+
+    def _assistant_greeting_response(self, parent_id: int) -> str:
+        children = self.get_linked_students(parent_id)
+        if children:
+            child_names = ", ".join(child.student_name for child in children[:2])
+            if len(children) > 2:
+                child_names = f"{child_names}, and {len(children) - 2} more"
+            return (
+                f"Hi! I can help you review {child_names}'s weak topics, strong topics, "
+                "syllabus, or create a practice quiz."
+            )
+        return (
+            "Hi! I can help with weak topics, strong topics, syllabus, and practice quizzes "
+            "once a student is linked to your parent account."
+        )
 
     def _detect_assistant_intent(self, message: str) -> str:
         text = message.lower()
