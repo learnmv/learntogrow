@@ -70,7 +70,7 @@ spec:
               name: learntogrow-secrets
               key: ollama-timeout
         - name: OLLAMA_GENERATION_WORKERS
-          value: "2"
+          value: "15"
         - name: OLLAMA_QUALITY_MODE
           value: "reviewed"
         - name: OLLAMA_CANDIDATE_COUNT

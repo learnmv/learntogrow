@@ -25,7 +25,7 @@ from app.services.questions import QuestionService
 
 logger = logging.getLogger(__name__)
 
-MAX_CONCURRENT_STANDARDS = 12
+MAX_CONCURRENT_STANDARDS = 15
 
 
 class QuestionGenerationJobService:
