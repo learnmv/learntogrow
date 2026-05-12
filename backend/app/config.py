@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "deepseek-r1:1.5b"
     OLLAMA_TIMEOUT: int = 300
+    OLLAMA_GENERATION_WORKERS: int = 2
+    OLLAMA_QUALITY_MODE: str = "reviewed"
+    OLLAMA_CANDIDATE_COUNT: int = 1
+    OLLAMA_MAX_REPAIR_ATTEMPTS: int = 1
+    OLLAMA_MIN_REVIEW_SCORE: float = 0.75
     PARENT_ASSISTANT_MODEL: str = "gemma4:e4b"
     PARENT_ASSISTANT_TIMEOUT: int = 120
 

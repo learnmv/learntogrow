@@ -69,6 +69,16 @@ spec:
             secretKeyRef:
               name: learntogrow-secrets
               key: ollama-timeout
+        - name: OLLAMA_GENERATION_WORKERS
+          value: "2"
+        - name: OLLAMA_QUALITY_MODE
+          value: "reviewed"
+        - name: OLLAMA_CANDIDATE_COUNT
+          value: "1"
+        - name: OLLAMA_MAX_REPAIR_ATTEMPTS
+          value: "1"
+        - name: OLLAMA_MIN_REVIEW_SCORE
+          value: "0.75"
         - name: PARENT_ASSISTANT_MODEL
           value: "gemma4:e4b"
         - name: PARENT_ASSISTANT_TIMEOUT

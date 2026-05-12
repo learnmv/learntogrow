@@ -15,6 +15,10 @@ class QuestionGenerateRequestAdmin(BaseModel):
     question_type: str = Field("multiple_choice", pattern="^(multiple_choice|open_ended)$")
     model: Optional[str] = Field(None, description="Ollama model to use (default from config)")
     timeout: Optional[int] = Field(300, ge=30, le=600, description="Timeout in seconds")
+    quality_mode: str = Field("reviewed", pattern="^(fast|reviewed|quality)$")
+    candidate_count: int = Field(1, ge=1, le=5)
+    max_repair_attempts: int = Field(1, ge=0, le=3)
+    min_review_score: float = Field(0.75, ge=0, le=1)
 
 
 class QuestionGenerateStatus(BaseModel):
@@ -81,7 +85,7 @@ class SmartFillRequest(BaseModel):
     """Smart fill question generation request."""
     subject_id: int
     grade_id: Optional[int] = None
-    fill_mode: str = Field("gaps", pattern="^(gaps|struggling|balanced)$")
+    fill_mode: str = Field("gaps", pattern="^(gaps|struggling|balanced|difficulty|diagrams)$")
     max_standards: int = Field(10, ge=1, le=50)
 
 

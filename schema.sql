@@ -134,6 +134,11 @@ CREATE TABLE generation_jobs (
     question_type VARCHAR(50) DEFAULT 'multiple_choice',
     model VARCHAR(100),
     timeout INTEGER DEFAULT 300,
+    quality_mode VARCHAR(20) NOT NULL DEFAULT 'reviewed'
+        CHECK (quality_mode IN ('fast', 'reviewed', 'quality')),
+    candidate_count INTEGER NOT NULL DEFAULT 1 CHECK (candidate_count BETWEEN 1 AND 5),
+    max_repair_attempts INTEGER NOT NULL DEFAULT 1 CHECK (max_repair_attempts BETWEEN 0 AND 3),
+    min_review_score NUMERIC(4,3) NOT NULL DEFAULT 0.750,
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
@@ -151,6 +156,25 @@ CREATE TABLE generation_job_standards (
     started_at TIMESTAMP,
     completed_at TIMESTAMP,
     UNIQUE(job_id, standard_id)
+);
+
+CREATE TABLE question_generation_audits (
+    id SERIAL PRIMARY KEY,
+    job_id INTEGER REFERENCES generation_jobs(id) ON DELETE CASCADE,
+    job_standard_id INTEGER REFERENCES generation_job_standards(id) ON DELETE CASCADE,
+    standard_id INTEGER REFERENCES standards(id) ON DELETE CASCADE,
+    question_id INTEGER REFERENCES questions(id) ON DELETE SET NULL,
+    stage VARCHAR(40) NOT NULL,
+    candidate_index INTEGER,
+    attempt INTEGER NOT NULL DEFAULT 0,
+    status VARCHAR(30) NOT NULL DEFAULT 'completed',
+    score NUMERIC(4,3),
+    prompt_name VARCHAR(80),
+    model VARCHAR(100),
+    request_payload JSONB DEFAULT '{}'::jsonb,
+    response_payload JSONB DEFAULT '{}'::jsonb,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
 );
 
 -- ============================================
@@ -194,6 +218,10 @@ CREATE INDEX idx_generation_jobs_status ON generation_jobs(status);
 CREATE INDEX idx_generation_jobs_created_by ON generation_jobs(created_by);
 CREATE INDEX idx_generation_job_standards_job_id ON generation_job_standards(job_id);
 CREATE INDEX idx_generation_job_standards_status ON generation_job_standards(status);
+CREATE INDEX idx_question_generation_audits_job ON question_generation_audits(job_id, created_at);
+CREATE INDEX idx_question_generation_audits_job_standard ON question_generation_audits(job_standard_id, created_at);
+CREATE INDEX idx_question_generation_audits_standard ON question_generation_audits(standard_id, created_at);
+CREATE INDEX idx_question_generation_audits_stage ON question_generation_audits(stage);
 
 -- User activity
 

@@ -330,6 +330,10 @@ def generate_questions_admin(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=request.quality_mode,
+        candidate_count=request.candidate_count,
+        max_repair_attempts=request.max_repair_attempts,
+        min_review_score=request.min_review_score,
         subject_id=request.subject_id,
         grade_id=request.grade_id,
         created_by=current_user.get("user_id"),
@@ -342,6 +346,10 @@ def generate_questions_admin(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=job.quality_mode,
+        candidate_count=job.candidate_count,
+        max_repair_attempts=job.max_repair_attempts,
+        min_review_score=float(job.min_review_score),
     )
 
     return job
@@ -369,6 +377,10 @@ def create_generation_job(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=request.quality_mode,
+        candidate_count=request.candidate_count,
+        max_repair_attempts=request.max_repair_attempts,
+        min_review_score=request.min_review_score,
         subject_id=request.subject_id,
         grade_id=request.grade_id,
         created_by=current_user.get("user_id"),
@@ -381,6 +393,10 @@ def create_generation_job(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=job.quality_mode,
+        candidate_count=job.candidate_count,
+        max_repair_attempts=job.max_repair_attempts,
+        min_review_score=float(job.min_review_score),
     )
 
     return job
@@ -457,6 +473,10 @@ async def job_progress_stream(
                     "completed_standards": current.completed_standards,
                     "failed_standards": current.failed_standards,
                     "questions_created": current.questions_created,
+                    "quality_mode": current.quality_mode,
+                    "candidate_count": current.candidate_count,
+                    "max_repair_attempts": current.max_repair_attempts,
+                    "min_review_score": float(current.min_review_score or 0.75),
                     "errors": current.errors or [],
                     "started_at": current.started_at.isoformat() if current.started_at else None,
                     "completed_at": current.completed_at.isoformat() if current.completed_at else None,
@@ -466,6 +486,8 @@ async def job_progress_stream(
                             "status": js.status,
                             "questions_created": js.questions_created,
                             "error": js.error,
+                            "avg_quality_score": js.avg_quality_score,
+                            "quality_summary": js.quality_summary,
                         }
                         for js in current.job_standards
                     ] if current.job_standards else [],
@@ -539,6 +561,10 @@ def retry_failed_standards(
             question_type=new_job.question_type or "multiple_choice",
             model=new_job.model,
             timeout=new_job.timeout or 300,
+            quality_mode=new_job.quality_mode,
+            candidate_count=new_job.candidate_count,
+            max_repair_attempts=new_job.max_repair_attempts,
+            min_review_score=float(new_job.min_review_score or 0.75),
         )
 
         return new_job

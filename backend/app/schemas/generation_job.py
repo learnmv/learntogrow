@@ -1,7 +1,7 @@
 """Pydantic schemas for generation job API."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,9 @@ class GenerationJobStandardResponse(BaseModel):
     questions_created: int = 0
     status: str = JobStandardStatus.PENDING.value
     error: Optional[str] = None
+    avg_quality_score: Optional[float] = None
+    last_review_notes: Optional[str] = None
+    quality_summary: Dict[str, Any] = Field(default_factory=dict)
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
 
@@ -37,7 +40,11 @@ class GenerationJobResponse(BaseModel):
     question_type: str = "multiple_choice"
     model: Optional[str] = None
     timeout: int = 300
-    errors: List[str] = []
+    quality_mode: str = "reviewed"
+    candidate_count: int = 1
+    max_repair_attempts: int = 1
+    min_review_score: float = 0.75
+    errors: List[str] = Field(default_factory=list)
     created_by: Optional[int] = None
     started_at: Optional[datetime] = None
     completed_at: Optional[datetime] = None
@@ -49,7 +56,7 @@ class GenerationJobResponse(BaseModel):
 
 class GenerationJobDetailResponse(GenerationJobResponse):
     """Generation job with per-standard details."""
-    job_standards: List[GenerationJobStandardResponse] = []
+    job_standards: List[GenerationJobStandardResponse] = Field(default_factory=list)
 
 
 class GenerationJobCreateRequest(BaseModel):
@@ -59,6 +66,10 @@ class GenerationJobCreateRequest(BaseModel):
     question_type: str = Field("multiple_choice", pattern="^(multiple_choice|open_ended)$")
     model: Optional[str] = Field(None, description="Ollama model override")
     timeout: int = Field(300, ge=30, le=600, description="Timeout per question in seconds")
+    quality_mode: str = Field("reviewed", pattern="^(fast|reviewed|quality)$")
+    candidate_count: int = Field(1, ge=1, le=5)
+    max_repair_attempts: int = Field(1, ge=0, le=3)
+    min_review_score: float = Field(0.75, ge=0.0, le=1.0)
     subject_id: Optional[int] = Field(None, description="Optional subject context")
     grade_id: Optional[int] = Field(None, description="Optional grade context")
 

@@ -9,12 +9,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import SessionLocal
 from app.models import (
     GenerationJob,
     GenerationJobStandard,
     JobStatus,
     JobStandardStatus,
+    QuestionGenerationAudit,
     Question,
     Standard,
     User,
@@ -47,6 +49,10 @@ class QuestionGenerationJobService:
         question_type: str = "multiple_choice",
         model: Optional[str] = None,
         timeout: int = 300,
+        quality_mode: Optional[str] = None,
+        candidate_count: Optional[int] = None,
+        max_repair_attempts: Optional[int] = None,
+        min_review_score: Optional[float] = None,
         subject_id: Optional[int] = None,
         grade_id: Optional[int] = None,
         created_by: Optional[int] = None,
@@ -59,6 +65,19 @@ class QuestionGenerationJobService:
         if not standard_ids:
             raise ValueError("At least one standard must be provided")
 
+        settings = get_settings()
+        resolved_quality_mode = quality_mode or settings.OLLAMA_QUALITY_MODE
+        if resolved_quality_mode not in {"fast", "reviewed", "quality"}:
+            resolved_quality_mode = "reviewed"
+        resolved_candidate_count = candidate_count if candidate_count is not None else settings.OLLAMA_CANDIDATE_COUNT
+        resolved_candidate_count = max(1, min(5, resolved_candidate_count))
+        if resolved_quality_mode in {"fast", "reviewed"}:
+            resolved_candidate_count = 1
+        resolved_repairs = max_repair_attempts if max_repair_attempts is not None else settings.OLLAMA_MAX_REPAIR_ATTEMPTS
+        resolved_repairs = max(0, min(3, resolved_repairs))
+        resolved_min_score = min_review_score if min_review_score is not None else settings.OLLAMA_MIN_REVIEW_SCORE
+        resolved_min_score = max(0.0, min(1.0, resolved_min_score))
+
         job = GenerationJob(
             status=JobStatus.PENDING.value,
             subject_id=subject_id,
@@ -68,6 +87,10 @@ class QuestionGenerationJobService:
             question_type=question_type,
             model=model,
             timeout=timeout,
+            quality_mode=resolved_quality_mode,
+            candidate_count=resolved_candidate_count,
+            max_repair_attempts=resolved_repairs,
+            min_review_score=resolved_min_score,
         )
         self.db.add(job)
         self.db.flush()  # get job.id
@@ -152,6 +175,10 @@ class QuestionGenerationJobService:
             question_type=original.question_type or "multiple_choice",
             model=original.model,
             timeout=original.timeout or 300,
+            quality_mode=original.quality_mode or "reviewed",
+            candidate_count=original.candidate_count or 1,
+            max_repair_attempts=original.max_repair_attempts or 1,
+            min_review_score=float(original.min_review_score or 0.75),
             subject_id=original.subject_id,
             grade_id=original.grade_id,
             created_by=original.created_by,
@@ -167,6 +194,10 @@ class QuestionGenerationJobService:
         question_type: str = "multiple_choice",
         model: Optional[str] = None,
         timeout: int = 300,
+        quality_mode: Optional[str] = None,
+        candidate_count: Optional[int] = None,
+        max_repair_attempts: Optional[int] = None,
+        min_review_score: Optional[float] = None,
     ) -> None:
         """Execute a generation job.  Must be called in a background task.
 
@@ -176,7 +207,15 @@ class QuestionGenerationJobService:
         db = SessionLocal()
         try:
             QuestionGenerationJobService._do_run(
-                db, job_id, question_type, model, timeout
+                db,
+                job_id,
+                question_type,
+                model,
+                timeout,
+                quality_mode,
+                candidate_count,
+                max_repair_attempts,
+                min_review_score,
             )
         except Exception:
             logger.exception(f"Unhandled error running generation job {job_id}")
@@ -201,6 +240,10 @@ class QuestionGenerationJobService:
         question_type: str,
         model: Optional[str],
         timeout: int,
+        quality_mode: str,
+        candidate_count: int,
+        max_repair_attempts: int,
+        min_review_score: float,
     ) -> Tuple[int, int, Optional[str]]:
         """Run generation for a single standard in its own thread + DB session.
 
@@ -225,6 +268,10 @@ class QuestionGenerationJobService:
                 question_type=question_type,
                 model=model,
                 timeout=timeout,
+                quality_mode=quality_mode,
+                candidate_count=candidate_count,
+                max_repair_attempts=max_repair_attempts,
+                min_review_score=min_review_score,
             )
 
             job_std.status = JobStandardStatus.DONE.value
@@ -297,6 +344,10 @@ class QuestionGenerationJobService:
         question_type: str,
         model: Optional[str],
         timeout: int,
+        quality_mode: Optional[str],
+        candidate_count: Optional[int],
+        max_repair_attempts: Optional[int],
+        min_review_score: Optional[float],
     ) -> None:
         """Core loop — must never raise unhandled exceptions."""
         service = QuestionGenerationJobService(db)
@@ -310,6 +361,14 @@ class QuestionGenerationJobService:
                 f"Job {job_id} has status '{job.status}', skipping execution"
             )
             return
+
+        resolved_question_type = job.question_type or question_type
+        resolved_model = job.model if job.model is not None else model
+        resolved_timeout = job.timeout or timeout
+        resolved_quality_mode = quality_mode or job.quality_mode or "reviewed"
+        resolved_candidate_count = candidate_count or job.candidate_count or 1
+        resolved_repairs = max_repair_attempts if max_repair_attempts is not None else (job.max_repair_attempts or 1)
+        resolved_min_score = min_review_score if min_review_score is not None else float(job.min_review_score or 0.75)
 
         # Mark running
         job.status = JobStatus.RUNNING.value
@@ -327,14 +386,20 @@ class QuestionGenerationJobService:
             .all()
         )
 
-        with ThreadPoolExecutor(max_workers=MAX_CONCURRENT_STANDARDS) as executor:
+        settings = get_settings()
+        max_workers = max(1, min(MAX_CONCURRENT_STANDARDS, settings.OLLAMA_GENERATION_WORKERS))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_map = {
                 executor.submit(
                     QuestionGenerationJobService._run_standard_worker,
                     job_std.id,
-                    question_type,
-                    model,
-                    timeout,
+                    resolved_question_type,
+                    resolved_model,
+                    resolved_timeout,
+                    resolved_quality_mode,
+                    resolved_candidate_count,
+                    resolved_repairs,
+                    resolved_min_score,
                 ): job_std
                 for job_std in pending
             }
@@ -425,6 +490,10 @@ class QuestionGenerationJobService:
         question_type: str,
         model: Optional[str],
         timeout: int,
+        quality_mode: str,
+        candidate_count: int,
+        max_repair_attempts: int,
+        min_review_score: float,
     ) -> int:
         """Generate questions for a single standard with difficulty spread.
 
@@ -439,12 +508,40 @@ class QuestionGenerationJobService:
 
         created = 0
         for target_difficulty in difficulties:
+            audit_ids: list[int] = []
+
+            def audit_callback(**kwargs) -> None:
+                audit = QuestionGenerationAudit(
+                    job_id=job_std.job_id,
+                    job_standard_id=job_std.id,
+                    standard_id=job_std.standard_id,
+                    stage=kwargs.get("stage"),
+                    candidate_index=kwargs.get("candidate_index"),
+                    attempt=kwargs.get("attempt", 0),
+                    status=kwargs.get("status", "completed"),
+                    score=kwargs.get("score"),
+                    prompt_name=kwargs.get("prompt_name"),
+                    model=kwargs.get("model"),
+                    request_payload=kwargs.get("request_payload", {}),
+                    response_payload=kwargs.get("response_payload", {}),
+                    notes=kwargs.get("notes"),
+                )
+                self.db.add(audit)
+                self.db.commit()
+                self.db.refresh(audit)
+                audit_ids.append(audit.id)
+
             question_data = question_service.generate_question(
                 standard_id=job_std.standard_id,
                 difficulty=target_difficulty,
                 question_type=question_type,
                 model=model,
                 timeout=timeout,
+                quality_mode=quality_mode,
+                candidate_count=candidate_count,
+                max_repair_attempts=max_repair_attempts,
+                min_review_score=min_review_score,
+                audit_callback=audit_callback,
             )
 
             # Validate required fields before persisting so a malformed
@@ -476,6 +573,14 @@ class QuestionGenerationJobService:
                 is_active=True,
             )
             self.db.add(question)
+            self.db.flush()
+            if audit_ids:
+                self.db.query(QuestionGenerationAudit).filter(
+                    QuestionGenerationAudit.id.in_(audit_ids)
+                ).update(
+                    {QuestionGenerationAudit.question_id: question.id},
+                    synchronize_session=False,
+                )
             created += 1
 
         self.db.commit()
