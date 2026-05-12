@@ -39,3 +39,22 @@ export interface LinkRequestResponse {
   link_id: number
   status: string
 }
+
+export interface ParentAssistantChatRequest {
+  message: string
+  thread_id?: number
+  student_id?: number
+  subject_id?: number
+  grade_id?: number
+}
+
+export interface ParentAssistantChatResponse {
+  intent: string
+  answer: string
+  thread_id: number | null
+  tool_name: string | null
+  requires_student: boolean
+  requires_subject: boolean
+  suggestions: string[]
+  data: Record<string, unknown>
+}

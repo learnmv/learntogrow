@@ -10,11 +10,14 @@ from .prompt import QuestionPrompt
 from .generation_job import GenerationJob, GenerationJobStandard, JobStatus, JobStandardStatus
 
 from .student_ability import StudentDomainAbility
+from .quiz_assignment import QuizAssignment, QuizAssignmentQuestion
+from .parent_assistant import ParentAssistantThread, ParentAssistantMessage, ParentAssistantToolCall
 
 __all__ = [
     "Subject", "Grade", "Domain", "Cluster", "Standard", "Question", "GeoGebra",
     "User", "UserRole", "ParentStudentLink", "LinkStatus", "PasswordResetToken", "AnsweredQuestion",
     "QuestionPrompt",
     "GenerationJob", "GenerationJobStandard", "JobStatus", "JobStandardStatus",
-    "StudentDomainAbility"
+    "StudentDomainAbility", "QuizAssignment", "QuizAssignmentQuestion",
+    "ParentAssistantThread", "ParentAssistantMessage", "ParentAssistantToolCall"
 ]

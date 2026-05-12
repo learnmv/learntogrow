@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Users, Link2, GraduationCap, Loader2, UserPlus, AlertCircle } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
+import { ParentAssistant } from '../../components/parent/ParentAssistant'
+import { QuizAssignmentPanel } from '../../components/parent/QuizAssignmentPanel'
 import { getLinkedChildren } from '../../services/parent'
 import type { ParentStudentLink } from '../../types/parent'
 
@@ -22,6 +24,7 @@ export function ParentDashboard() {
   const [children, setChildren] = useState<ParentStudentLink[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [assignmentRefreshKey, setAssignmentRefreshKey] = useState(0)
 
   useEffect(() => {
     loadChildren()
@@ -42,7 +45,7 @@ export function ParentDashboard() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-6xl mx-auto">
       {/* Header */}
       <div className="mb-8">
         <div className="flex items-center gap-3 mb-2">
@@ -55,6 +58,15 @@ export function ParentDashboard() {
           View your linked children and monitor their learning progress.
         </p>
       </div>
+
+      <ParentAssistant
+        childrenList={children}
+        onAssignmentCreated={() => setAssignmentRefreshKey((key) => key + 1)}
+      />
+
+      {!loading && !error && children.length > 0 && (
+        <QuizAssignmentPanel childrenList={children} refreshKey={assignmentRefreshKey} />
+      )}
 
       {/* Action Bar */}
       <div className="flex items-center justify-between mb-6">

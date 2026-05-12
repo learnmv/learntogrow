@@ -12,7 +12,6 @@ import type {
 
 // Token storage key
 const TOKEN_KEY = 'learntogrow_token';
-const USER_KEY = 'learntogrow_user';
 
 /**
  * Store auth token
@@ -33,36 +32,6 @@ export function getToken(): string | null {
  */
 export function removeToken(): void {
   localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-}
-
-/**
- * Store user data
- */
-export function setUser(user: User): void {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-/**
- * Get stored user data
- */
-export function getStoredUser(): User | null {
-  const userJson = localStorage.getItem(USER_KEY);
-  if (userJson) {
-    try {
-      return JSON.parse(userJson);
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-/**
- * Check if user is authenticated
- */
-export function isAuthenticated(): boolean {
-  return !!getToken();
 }
 
 /**
@@ -100,9 +69,7 @@ export async function registerParent(data: RegisterParentData): Promise<{ user: 
  * Get current user info
  */
 export async function getCurrentUser(): Promise<User> {
-  const user = await get<User>('/auth/me', { headers: getAuthHeaders() });
-  setUser(user);
-  return user;
+  return get<User>('/auth/me', { headers: getAuthHeaders() });
 }
 
 /**

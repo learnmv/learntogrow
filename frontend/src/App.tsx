@@ -12,6 +12,7 @@ import { ResetPasswordPage } from './pages/auth/ResetPasswordPage'
 import { StudentDashboard } from './pages/student/StudentDashboard'
 import { QuizPage } from './pages/student/QuizPage'
 import { AdaptiveQuizPage } from './pages/student/AdaptiveQuizPage'
+import { AssignedQuizPage } from './pages/student/AssignedQuizPage'
 import { ParentDashboard } from './pages/parent/ParentDashboard'
 import { ParentLinkRequestPage } from './pages/parent/ParentLinkRequestPage'
 import { ChildProgressPage } from './pages/parent/ChildProgressPage'
@@ -139,6 +140,7 @@ function App() {
       <Route element={<RoleRoute allowedRoles={['student']} />}>
         <Route element={<AppLayout />}>
           <Route path="/student" element={<StudentDashboard />} />
+          <Route path="/student/assigned-quiz/:assignmentId" element={<AssignedQuizPage />} />
         </Route>
       </Route>
 

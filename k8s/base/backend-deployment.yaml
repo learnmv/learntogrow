@@ -69,6 +69,10 @@ spec:
             secretKeyRef:
               name: learntogrow-secrets
               key: ollama-timeout
+        - name: PARENT_ASSISTANT_MODEL
+          value: "gemma4:e4b"
+        - name: PARENT_ASSISTANT_TIMEOUT
+          value: "120"
         resources:
           requests:
             memory: "256Mi"

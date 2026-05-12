@@ -27,20 +27,5 @@ export async function recordAdaptiveAnswer(data: {
     reason?: string
   }
 }> {
-  return post(`/questions/answer`, data)
-}
-
-/**
- * Get the student's theta for a domain.
- */
-export async function fetchDomainTheta(domainId: number): Promise<{
-  domain_id: number
-  domain_name: string
-  theta: number
-  questions_attempted: number
-  correct_streak: number
-}> {
-  return get(`/questions/adaptive-domain?domain_id=${domainId}`, {
-    headers: getAuthHeaders(),
-  })
+  return post(`/questions/answer`, data, { headers: getAuthHeaders() })
 }

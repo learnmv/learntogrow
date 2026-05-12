@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowRight, RotateCcw, CheckCircle, XCircle, RefreshCw, Target } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
-import { cn, renderMathToHtml } from '../lib/utils'
+import { cn, getFriendlySkillLevel, renderMathToHtml } from '../lib/utils'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import { fetchAdaptiveQuestion, recordAdaptiveAnswer } from '../services/adaptive'
 import type { QuestionFromDB } from '../types/questions'
@@ -25,6 +25,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
 
   const [questionCount, setQuestionCount] = useState(0)
   const [correctCount, setCorrectCount] = useState(0)
+  const [answeredCount, setAnsweredCount] = useState(0)
   const [theta, setTheta] = useState<number | null>(null)
 
   const loadNextQuestion = useCallback(async (isRetry = false) => {
@@ -38,9 +39,10 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
       const question = await fetchAdaptiveQuestion(parseInt(domainId))
       setCurrentQuestion(question)
       setQuestionCount(prev => prev + 1)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to load adaptive question:', err)
-      if (err?.response?.status === 404) {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (msg.includes('404') || msg.includes('No active questions')) {
         setError('No more questions available in this domain right now.')
       } else {
         setError('Failed to load question. Please try again.')
@@ -68,6 +70,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
 
     setSelectedAnswer(value)
     setShowResult(true)
+    setAnsweredCount(prev => prev + 1)
 
     const isCorrect = value === currentQuestion.correct_answer
 
@@ -95,8 +98,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
     await loadNextQuestion()
   }
 
-  const answeredSoFar = questionCount > 0 ? questionCount - (loading && !currentQuestion ? 1 : 0) : 0
-  const accuracy = answeredSoFar > 0 ? Math.round((correctCount / answeredSoFar) * 100) : 0
+  const accuracy = answeredCount > 0 ? Math.round((correctCount / answeredCount) * 100) : 0
 
   if (loading && !currentQuestion) {
     return (
@@ -171,7 +173,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
               <div className="flex items-center gap-1.5 px-3 py-1.5 bg-sage-100 rounded-lg">
                 <Target className="w-4 h-4 text-sage-600" />
                 <span className="text-sm font-display text-sage-700">
-                  Skill: {Math.round(theta * 100)}%
+                  Skill: {getFriendlySkillLevel(theta)}
                 </span>
               </div>
             )}

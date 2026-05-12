@@ -76,29 +76,10 @@ export async function fetchStandards(
 }
 
 /**
- * Fetch a single standard by ID
- */
-export async function fetchStandardById(id: number): Promise<Standard> {
-  const standards = await fetchStandards()
-  const standard = standards.find(s => s.id === id)
-  if (!standard) throw new Error(`Standard with ID ${id} not found`)
-  return standard
-}
-
-/**
  * Fetch grades by subject (alias for fetchGrades)
  */
 export async function fetchGradesBySubject(subjectId: number): Promise<Grade[]> {
   return fetchGrades(subjectId)
-}
-
-/**
- * Fetch domains by grade
- * Note: Backend doesn't have grade filter for domains, so we fetch all domains for the subject
- * and filter client-side, or return all domains
- */
-export async function fetchDomainsByGrade(_gradeId: number): Promise<Domain[]> {
-  return fetchDomains()
 }
 
 export async function fetchDomainsBySubject(subjectId: number): Promise<Domain[]> {
