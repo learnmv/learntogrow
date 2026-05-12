@@ -18,6 +18,16 @@ VALID_INTENTS = {
 
 VALID_DIFFICULTIES = {"easy", "medium", "hard", "mixed"}
 
+VALID_TOOLS = {
+    "get_children",
+    "get_learning_summary",
+    "get_weak_topics",
+    "get_strong_topics",
+    "get_syllabus",
+    "create_quiz_assignment",
+    "get_assignment_status",
+}
+
 
 class ParentAssistantLLMService:
     """Small Ollama-backed planner for the parent assistant.
@@ -51,6 +61,61 @@ class ParentAssistantLLMService:
             return self._clean_plan(parsed)
         except Exception as exc:
             logger.warning("Parent assistant LLM planner unavailable: %s", exc)
+            return None
+
+    def plan_tool_call(
+        self,
+        message: str,
+        context: dict[str, Any],
+        tools: list[dict[str, Any]],
+    ) -> Optional[dict[str, Any]]:
+        prompt = self._build_tool_prompt(message, context, tools)
+        try:
+            response = httpx.post(
+                self.ollama_url,
+                json={
+                    "model": self.settings.PARENT_ASSISTANT_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {"temperature": 0.1},
+                },
+                timeout=self.settings.PARENT_ASSISTANT_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            raw_plan = payload.get("response", "{}")
+            parsed = json.loads(raw_plan)
+            return self._clean_tool_call(parsed)
+        except Exception as exc:
+            logger.warning("Parent assistant tool planner unavailable: %s", exc)
+            return None
+
+    def write_response(
+        self,
+        message: str,
+        context: dict[str, Any],
+        tool_call: dict[str, Any],
+        tool_result: dict[str, Any],
+    ) -> Optional[str]:
+        prompt = self._build_response_prompt(message, context, tool_call, tool_result)
+        try:
+            response = httpx.post(
+                self.ollama_url,
+                json={
+                    "model": self.settings.PARENT_ASSISTANT_MODEL,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.2},
+                },
+                timeout=self.settings.PARENT_ASSISTANT_TIMEOUT,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            answer = str(payload.get("response", "")).strip()
+            return answer or None
+        except Exception as exc:
+            logger.warning("Parent assistant response writer unavailable: %s", exc)
             return None
 
     def _build_prompt(self, message: str, context: dict[str, Any]) -> str:
@@ -96,6 +161,70 @@ Parent message:
 {message}
 """.strip()
 
+    def _build_tool_prompt(
+        self,
+        message: str,
+        context: dict[str, Any],
+        tools: list[dict[str, Any]],
+    ) -> str:
+        context_json = json.dumps(context, default=str)
+        tools_json = json.dumps(tools, default=str)
+        return f"""
+You are the tool planner for LearnToGrow's parent assistant.
+Return only valid JSON. Do not answer the parent directly.
+
+Choose exactly one tool from the provided tool list.
+Use only IDs, children, subjects, grades, and domains present in context.
+Use null or omit an argument when unsure.
+Do not invent data. The backend will validate and execute the tool.
+
+Return this JSON shape:
+{{
+  "tool_name": "one tool name",
+  "arguments": {{}},
+  "confidence": number
+}}
+
+Tools:
+{tools_json}
+
+Context:
+{context_json}
+
+Parent message:
+{message}
+""".strip()
+
+    def _build_response_prompt(
+        self,
+        message: str,
+        context: dict[str, Any],
+        tool_call: dict[str, Any],
+        tool_result: dict[str, Any],
+    ) -> str:
+        context_json = json.dumps(context, default=str)
+        tool_call_json = json.dumps(tool_call, default=str)
+        tool_result_json = json.dumps(tool_result, default=str)
+        return f"""
+You are LearnToGrow's parent assistant.
+Write a concise, helpful answer for the parent using only the tool result.
+Do not invent student performance, syllabus data, quiz status, or assignments.
+If the tool asks for clarification, ask a clear clarification question.
+Mention created assignments only if the tool result says one was created.
+
+Context:
+{context_json}
+
+Parent message:
+{message}
+
+Executed tool:
+{tool_call_json}
+
+Tool result:
+{tool_result_json}
+""".strip()
+
     def _clean_plan(self, plan: dict[str, Any]) -> dict[str, Any]:
         intent = plan.get("intent")
         if intent not in VALID_INTENTS:
@@ -121,6 +250,21 @@ Parent message:
             "domain_ids": self._int_list(plan.get("domain_ids")),
             "domain_names": self._str_list(plan.get("domain_names")),
             "focus": self._optional_str(plan.get("focus")),
+            "confidence": self._confidence(plan.get("confidence")),
+        }
+
+    def _clean_tool_call(self, plan: dict[str, Any]) -> dict[str, Any]:
+        tool_name = plan.get("tool_name") or plan.get("tool")
+        if tool_name not in VALID_TOOLS:
+            tool_name = None
+
+        arguments = plan.get("arguments")
+        if not isinstance(arguments, dict):
+            arguments = {}
+
+        return {
+            "tool_name": tool_name,
+            "arguments": arguments,
             "confidence": self._confidence(plan.get("confidence")),
         }
 

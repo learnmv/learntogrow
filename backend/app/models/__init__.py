@@ -11,11 +11,13 @@ from .generation_job import GenerationJob, GenerationJobStandard, JobStatus, Job
 
 from .student_ability import StudentDomainAbility
 from .quiz_assignment import QuizAssignment, QuizAssignmentQuestion
+from .parent_assistant import ParentAssistantThread, ParentAssistantMessage, ParentAssistantToolCall
 
 __all__ = [
     "Subject", "Grade", "Domain", "Cluster", "Standard", "Question", "GeoGebra",
     "User", "UserRole", "ParentStudentLink", "LinkStatus", "PasswordResetToken", "AnsweredQuestion",
     "QuestionPrompt",
     "GenerationJob", "GenerationJobStandard", "JobStatus", "JobStandardStatus",
-    "StudentDomainAbility", "QuizAssignment", "QuizAssignmentQuestion"
+    "StudentDomainAbility", "QuizAssignment", "QuizAssignmentQuestion",
+    "ParentAssistantThread", "ParentAssistantMessage", "ParentAssistantToolCall"
 ]

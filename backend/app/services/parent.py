@@ -1,4 +1,5 @@
 from datetime import datetime
+import json
 import re
 from typing import List, Optional
 from sqlalchemy.orm import Session, joinedload
@@ -19,6 +20,9 @@ from app.models import (
     Question,
     QuizAssignment,
     QuizAssignmentQuestion,
+    ParentAssistantThread,
+    ParentAssistantMessage,
+    ParentAssistantToolCall,
 )
 from app.schemas.parent import (
     ParentAssistantChatRequest,
@@ -28,6 +32,7 @@ from app.schemas.parent import (
 )
 from app.schemas.quiz_assignment import QuizAssignmentCreateRequest
 from app.services.parent_assistant_llm import ParentAssistantLLMService
+from app.services.parent_assistant_tools import ParentAssistantToolRegistry
 from app.services.questions import QuestionService
 from app.services.student import get_skill_level
 
@@ -551,47 +556,81 @@ class ParentService:
         return data
 
     def handle_assistant_chat(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
-        """Handle parent assistant requests using deterministic learning and quiz tools."""
+        """Handle parent assistant requests through a controlled tool-calling loop."""
         message = request.message.strip()
-        plan = self._plan_assistant_request(parent_id, request)
-        intent = plan.get("intent") or self._detect_assistant_intent(message)
-        student_id = request.student_id or plan.get("student_id")
+        thread = self._get_or_create_assistant_thread(parent_id, request)
+        parent_message = self._add_assistant_message(
+            thread_id=thread.id,
+            role="parent",
+            content=message,
+        )
+        context = self._assistant_planner_context(parent_id, request, thread.id)
+        tool_registry = ParentAssistantToolRegistry(self, parent_id)
+        tool_call = ParentAssistantLLMService().plan_tool_call(
+            message=message,
+            context=context,
+            tools=tool_registry.list_tools(),
+        ) or self._fallback_tool_call(parent_id, request, context)
 
-        if intent == "syllabus":
-            return self._assistant_syllabus_response(request, plan)
+        if not tool_call.get("tool_name"):
+            tool_call = self._fallback_tool_call(parent_id, request, context)
 
-        student = self._resolve_assistant_student(parent_id, student_id)
-        if not student:
-            linked_students = self.get_linked_students(parent_id)
-            if not linked_students:
-                return {
-                    "intent": intent,
-                    "answer": "I do not see an approved student link yet. Once a link is approved, I can summarize strengths, weak topics, and practice needs.",
-                    "requires_student": True,
-                    "suggestions": ["Request a student link", "Show syllabus"],
-                    "data": {"children": []},
-                }
+        tool_arguments = self._merge_selected_context_into_tool_args(request, tool_call.get("arguments", {}))
+        tool_call["arguments"] = tool_arguments
 
-            return {
-                "intent": intent,
-                "answer": "Which child should I look at? Select a child, then ask about strengths, weak topics, or recent progress.",
-                "requires_student": True,
-                "suggestions": [
-                    "What are my child's weak topics?",
-                    "What are my child's strong topics?",
-                    "Show recent progress",
-                ],
-                "data": {"children": [child.model_dump() for child in linked_students]},
+        audit = self._start_tool_call(
+            thread_id=thread.id,
+            message_id=parent_message.id,
+            tool_name=tool_call["tool_name"],
+            arguments=tool_arguments,
+        )
+        try:
+            tool_result = tool_registry.execute(tool_call["tool_name"], tool_arguments)
+            self._finish_tool_call(audit, "completed", result=tool_result)
+        except Exception as exc:
+            self.db.rollback()
+            audit = self.db.query(ParentAssistantToolCall).filter(ParentAssistantToolCall.id == audit.id).first()
+            tool_result = {
+                "ok": False,
+                "intent": "learning_summary",
+                "fallback_answer": f"I could not complete that action: {exc}",
+                "suggestions": ["Show weak topics", "Show syllabus"],
+                "data": {},
             }
+            if audit:
+                self._finish_tool_call(audit, "failed", result=tool_result, error=str(exc))
 
-        if intent == "quiz_assignment":
-            return self._assistant_quiz_assignment_response(parent_id, student, request, plan)
-        if intent == "strong_topics":
-            return self._assistant_learning_response(student, focus="strong")
-        if intent == "weak_topics":
-            return self._assistant_learning_response(student, focus="weak")
+        answer = ParentAssistantLLMService().write_response(
+            message=message,
+            context=context,
+            tool_call=tool_call,
+            tool_result=tool_result,
+        ) or tool_result["fallback_answer"]
+        intent = tool_result.get("intent", "learning_summary")
 
-        return self._assistant_learning_response(student, focus="summary")
+        self._add_assistant_message(
+            thread_id=thread.id,
+            role="assistant",
+            content=answer,
+            intent=intent,
+        )
+
+        data = tool_result.get("data", {})
+        data["tool_call"] = {
+            "id": audit.id if audit else None,
+            "tool_name": tool_call["tool_name"],
+            "status": tool_result.get("status", "completed" if tool_result.get("ok") else "failed"),
+        }
+        return {
+            "intent": intent,
+            "answer": answer,
+            "thread_id": thread.id,
+            "tool_name": tool_call["tool_name"],
+            "requires_student": tool_result.get("requires_student", False),
+            "requires_subject": tool_result.get("requires_subject", False),
+            "suggestions": tool_result.get("suggestions", []),
+            "data": data,
+        }
 
     def _plan_assistant_request(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
         context = self._assistant_planner_context(parent_id, request)
@@ -605,7 +644,12 @@ class ParentService:
 
         return plan
 
-    def _assistant_planner_context(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
+    def _assistant_planner_context(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+        thread_id: Optional[int] = None,
+    ) -> dict:
         children = self.get_linked_students(parent_id)
         subjects = self.db.query(Subject).order_by(Subject.name).all()
         grades_query = self.db.query(Grade)
@@ -665,7 +709,162 @@ class ParentService:
                 }
                 for domain in domains
             ],
+            "recent_messages": self._recent_assistant_messages(thread_id) if thread_id else [],
         }
+
+    def _get_or_create_assistant_thread(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+    ) -> ParentAssistantThread:
+        if request.thread_id is not None:
+            thread = self.db.query(ParentAssistantThread).filter(
+                ParentAssistantThread.id == request.thread_id,
+                ParentAssistantThread.parent_id == parent_id,
+            ).first()
+            if thread:
+                if request.student_id and self.can_view_student(parent_id, request.student_id):
+                    thread.student_id = request.student_id
+                    self._touch_assistant_thread(thread.id)
+                    self.db.commit()
+                return thread
+
+        student_id = request.student_id if request.student_id and self.can_view_student(parent_id, request.student_id) else None
+        thread = ParentAssistantThread(
+            parent_id=parent_id,
+            student_id=student_id,
+            title=request.message.strip()[:120],
+        )
+        self.db.add(thread)
+        self.db.commit()
+        self.db.refresh(thread)
+        return thread
+
+    def _add_assistant_message(
+        self,
+        thread_id: int,
+        role: str,
+        content: str,
+        intent: Optional[str] = None,
+    ) -> ParentAssistantMessage:
+        message = ParentAssistantMessage(
+            thread_id=thread_id,
+            role=role,
+            content=content,
+            intent=intent,
+        )
+        self.db.add(message)
+        self._touch_assistant_thread(thread_id)
+        self.db.commit()
+        self.db.refresh(message)
+        return message
+
+    def _recent_assistant_messages(self, thread_id: Optional[int], limit: int = 8) -> list[dict]:
+        if thread_id is None:
+            return []
+        messages = (
+            self.db.query(ParentAssistantMessage)
+            .filter(ParentAssistantMessage.thread_id == thread_id)
+            .order_by(ParentAssistantMessage.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "role": message.role,
+                "content": message.content,
+                "intent": message.intent,
+                "created_at": message.created_at,
+            }
+            for message in reversed(messages)
+        ]
+
+    def _start_tool_call(
+        self,
+        thread_id: int,
+        message_id: int,
+        tool_name: str,
+        arguments: dict,
+    ) -> ParentAssistantToolCall:
+        tool_call = ParentAssistantToolCall(
+            thread_id=thread_id,
+            message_id=message_id,
+            tool_name=tool_name,
+            arguments=self._json_safe(arguments),
+            status="running",
+        )
+        self.db.add(tool_call)
+        self.db.commit()
+        self.db.refresh(tool_call)
+        return tool_call
+
+    def _finish_tool_call(
+        self,
+        tool_call: ParentAssistantToolCall,
+        status: str,
+        result: dict,
+        error: Optional[str] = None,
+    ) -> None:
+        tool_call.status = status
+        tool_call.result = self._json_safe(result)
+        tool_call.error = error
+        tool_call.completed_at = datetime.utcnow()
+        self._touch_assistant_thread(tool_call.thread_id)
+        self.db.commit()
+        self.db.refresh(tool_call)
+
+    def _touch_assistant_thread(self, thread_id: int) -> None:
+        thread = self.db.query(ParentAssistantThread).filter(ParentAssistantThread.id == thread_id).first()
+        if thread:
+            thread.updated_at = datetime.utcnow()
+
+    def _json_safe(self, value):
+        return json.loads(json.dumps(value, default=str))
+
+    def _merge_selected_context_into_tool_args(
+        self,
+        request: ParentAssistantChatRequest,
+        arguments: dict,
+    ) -> dict:
+        merged = dict(arguments or {})
+        if request.student_id is not None:
+            merged["student_id"] = request.student_id
+        if request.subject_id is not None:
+            merged["subject_id"] = request.subject_id
+        if request.grade_id is not None:
+            merged["grade_id"] = request.grade_id
+        return merged
+
+    def _fallback_tool_call(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+        context: dict,
+    ) -> dict:
+        intent = self._detect_assistant_intent(request.message)
+        arguments = {
+            "student_id": request.student_id,
+            "subject_id": request.subject_id,
+            "grade_id": request.grade_id,
+        }
+
+        if request.student_id is None and len(context.get("children", [])) == 1:
+            arguments["student_id"] = context["children"][0]["student_id"]
+
+        if intent == "quiz_assignment":
+            arguments.update({
+                "difficulty": self._parse_assignment_difficulty(request.message),
+                "question_count": self._parse_assignment_question_count(request.message),
+                "focus": "weak_topics" if self._message_requests_weak_topics(request.message) else "subject",
+            })
+            return {"tool_name": "create_quiz_assignment", "arguments": arguments, "confidence": 0.5}
+        if intent == "syllabus":
+            return {"tool_name": "get_syllabus", "arguments": arguments, "confidence": 0.5}
+        if intent == "strong_topics":
+            return {"tool_name": "get_strong_topics", "arguments": arguments, "confidence": 0.5}
+        if intent == "weak_topics":
+            return {"tool_name": "get_weak_topics", "arguments": arguments, "confidence": 0.5}
+        return {"tool_name": "get_learning_summary", "arguments": arguments, "confidence": 0.5}
 
     def _detect_assistant_intent(self, message: str) -> str:
         text = message.lower()
@@ -698,6 +897,13 @@ class ParentService:
         if len(linked_students) == 1:
             return self.db.query(User).filter(User.id == linked_students[0].student_id).first()
         return None
+
+    def _get_student_by_id(self, student_id: int) -> Optional[User]:
+        return self.db.query(User).filter(
+            User.id == student_id,
+            User.role == UserRole.STUDENT,
+            User.is_active == True,
+        ).first()
 
     def _assistant_quiz_assignment_response(
         self,

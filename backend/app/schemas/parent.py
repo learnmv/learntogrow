@@ -77,6 +77,7 @@ class StudentDetailForParent(BaseModel):
 class ParentAssistantChatRequest(BaseModel):
     """Parent assistant chat request with optional UI-selected context."""
     message: str = Field(..., min_length=1, max_length=1000)
+    thread_id: Optional[int] = None
     student_id: Optional[int] = None
     subject_id: Optional[int] = None
     grade_id: Optional[int] = None
@@ -86,6 +87,8 @@ class ParentAssistantChatResponse(BaseModel):
     """Parent assistant response for learning, syllabus, and quiz assignment tools."""
     intent: str
     answer: str
+    thread_id: Optional[int] = None
+    tool_name: Optional[str] = None
     requires_student: bool = False
     requires_subject: bool = False
     suggestions: list[str] = Field(default_factory=list)

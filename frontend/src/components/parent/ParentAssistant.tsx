@@ -39,6 +39,7 @@ export function ParentAssistant({ childrenList, onAssignmentCreated }: ParentAss
   const [loadingGrades, setLoadingGrades] = useState(false)
   const [sending, setSending] = useState(false)
   const [suggestions, setSuggestions] = useState(starterPrompts)
+  const [threadId, setThreadId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!selectedStudentId && childrenList.length === 1) {
@@ -100,10 +101,12 @@ export function ParentAssistant({ childrenList, onAssignmentCreated }: ParentAss
     try {
       const response = await sendParentAssistantMessage({
         message: trimmed,
+        thread_id: threadId ?? undefined,
         student_id: selectedStudentId ? Number(selectedStudentId) : undefined,
         subject_id: selectedSubjectId ? Number(selectedSubjectId) : undefined,
         grade_id: selectedGradeId ? Number(selectedGradeId) : undefined,
       })
+      setThreadId(response.thread_id)
       setMessages((current) => [...current, { role: 'assistant', content: response.answer }])
       setSuggestions(response.suggestions.length > 0 ? response.suggestions : starterPrompts)
       if (response.intent === 'quiz_assignment' && response.data.assignment) {
