@@ -18,11 +18,19 @@ MAX_RETRIES = 3
 BASE_TEMPERATURE = 0.7
 TEMPERATURE_INCREMENT = 0.2
 BACKOFF_BASE = 2
+DIFFICULTY_TOLERANCE = 0.35
 
 _OPTION_LABEL_PATTERN = re.compile(r"^[A-Da-d][\.)\s\-]+\s*")
+_WHITESPACE_PATTERN = re.compile(r"\s+")
+_INCOMPLETE_MARKERS = ("___", "tbd", "todo", "placeholder", "insert ", "missing ")
 
 
-def validate_question_data(data: dict, standard_code: str) -> dict:
+def normalize_for_match(value: Any) -> str:
+    """Normalize text for strict option/answer comparison."""
+    return _WHITESPACE_PATTERN.sub(" ", str(value).strip()).lower()
+
+
+def validate_question_data(data: dict, standard_code: str, target_difficulty: Optional[float] = None) -> dict:
     """Validate and clean question data from LLM."""
     errors = []
 
@@ -36,6 +44,8 @@ def validate_question_data(data: dict, standard_code: str) -> dict:
     question_lower = data.get("question", "").lower()
     if "when and" in question_lower and "=" not in question_lower:
         errors.append("Question has missing variable values (e.g., 'when and')")
+    if any(marker in question_lower for marker in _INCOMPLETE_MARKERS):
+        errors.append("Question contains incomplete placeholder text")
 
     if data.get("question_type") == "multiple_choice" or "options" in data:
         options = data.get("options", [])
@@ -49,6 +59,16 @@ def validate_question_data(data: dict, standard_code: str) -> dict:
                     errors.append(f"Option {chr(65 + i)} is empty")
                 elif str(opt).strip() in ["A", "B", "C", "D"]:
                     errors.append(f"Option {chr(65 + i)} is just a letter label")
+            normalized_options = [normalize_for_match(opt) for opt in options]
+            if len(set(normalized_options)) != len(normalized_options):
+                errors.append("Options must be unique")
+
+            answer = data.get("answer")
+            if answer:
+                normalized_answer = normalize_for_match(answer)
+                matches = [opt for opt in normalized_options if opt == normalized_answer]
+                if len(matches) != 1:
+                    errors.append("Answer must match exactly one option")
 
     if data.get("requires_diagram"):
         commands = data.get("geogebra_commands")
@@ -59,6 +79,24 @@ def validate_question_data(data: dict, standard_code: str) -> dict:
 
     if not data.get("answer"):
         errors.append("Answer is missing")
+
+    explanation = data.get("explanation")
+    if not explanation or len(str(explanation).strip()) < 10:
+        errors.append("Explanation is missing or too short")
+
+    difficulty = data.get("difficulty")
+    try:
+        difficulty_value = float(difficulty)
+    except (TypeError, ValueError):
+        errors.append("Difficulty must be a number between 0 and 1")
+    else:
+        if difficulty_value < 0 or difficulty_value > 1:
+            errors.append("Difficulty must be between 0 and 1")
+        if target_difficulty is not None and abs(difficulty_value - target_difficulty) > DIFFICULTY_TOLERANCE:
+            errors.append(
+                f"Difficulty {difficulty_value:.2f} is too far from target {target_difficulty:.2f}"
+            )
+        data["difficulty"] = round(difficulty_value, 2)
 
     if errors:
         raise ValueError(f"Invalid question data: {'; '.join(errors)}")
@@ -231,8 +269,10 @@ class QuestionService:
 
         if "options" in question_data and isinstance(question_data["options"], list):
             question_data["options"] = [clean_option_text(opt) for opt in question_data["options"]]
+        if "answer" in question_data:
+            question_data["answer"] = clean_option_text(str(question_data["answer"]))
 
-        validate_question_data(question_data, standard.code)
+        validate_question_data(question_data, standard.code, target_difficulty=difficulty)
 
         if standard.requires_diagram and not question_data.get("geogebra_commands"):
             raise ValueError(f"Diagram question for {standard.code} is missing required geogebra_commands")
@@ -461,7 +501,7 @@ class QuestionService:
         min_review_score: Optional[float] = None,
         audit_callback: Optional[Callable[..., None]] = None,
     ) -> Dict[str, Any]:
-        """Generate a question using Ollama, optionally with quality review."""
+        """Generate a question using Ollama and return only review-approved output."""
         standard = self.db.query(Standard).filter(Standard.id == standard_id).first()
         if not standard:
             raise ValueError(f"Standard with ID {standard_id} not found")
@@ -471,7 +511,7 @@ class QuestionService:
         )
         ollama_model = model if model else self.settings.OLLAMA_MODEL
         actual_timeout = timeout if timeout is not None else self.settings.OLLAMA_TIMEOUT
-        actual_quality_mode = (quality_mode or "fast").lower()
+        actual_quality_mode = (quality_mode or self.settings.OLLAMA_QUALITY_MODE).lower()
         if actual_quality_mode not in {"fast", "reviewed", "quality"}:
             actual_quality_mode = "reviewed"
 
@@ -496,30 +536,15 @@ class QuestionService:
             question_type,
         )
 
-        if actual_quality_mode == "fast":
-            return self._generate_candidate(
-                standard=standard,
-                difficulty=actual_difficulty,
-                question_type=question_type,
-                prompt=base_prompt,
-                model=ollama_model,
-                timeout=actual_timeout,
-                audit_callback=audit_callback,
-            )
-
-        plan = self._plan_question(
-            standard=standard,
-            difficulty=actual_difficulty,
-            question_type=question_type,
-            model=ollama_model,
-            timeout=actual_timeout,
-            audit_callback=audit_callback,
-        )
-        prompt = self._build_planned_prompt(base_prompt, plan)
+        plan: dict = {}
+        prompt = base_prompt
+        review_attempts = actual_candidate_count
+        if actual_quality_mode in {"fast", "reviewed"}:
+            review_attempts = max(1, actual_max_repairs + 1)
 
         candidates = []
         last_error = None
-        for candidate_index in range(actual_candidate_count):
+        for candidate_index in range(review_attempts):
             try:
                 candidate = self._generate_candidate(
                     standard=standard,
@@ -543,42 +568,16 @@ class QuestionService:
                     audit_callback=audit_callback,
                 )
 
-                final_candidate = candidate
-                final_review = review
-                for repair_attempt in range(actual_max_repairs):
-                    if final_review.get("approved"):
-                        break
-                    final_candidate = self._repair_question(
-                        question_data=final_candidate,
-                        review_or_error=final_review,
-                        standard=standard,
-                        difficulty=actual_difficulty,
-                        question_type=question_type,
-                        model=ollama_model,
-                        timeout=actual_timeout,
-                        candidate_index=candidate_index,
-                        attempt=repair_attempt + 1,
-                        audit_callback=audit_callback,
-                    )
-                    final_review = self._review_question(
-                        question_data=final_candidate,
-                        standard=standard,
-                        difficulty=actual_difficulty,
-                        question_type=question_type,
-                        model=ollama_model,
-                        timeout=actual_timeout,
-                        min_review_score=actual_min_score,
-                        candidate_index=candidate_index,
-                        audit_callback=audit_callback,
-                    )
-
                 candidates.append(
                     {
-                        "question": final_candidate,
-                        "review": final_review,
-                        "score": float(final_review.get("score", 0) or 0),
+                        "question": candidate,
+                        "review": review,
+                        "score": float(review.get("score", 0) or 0),
                     }
                 )
+
+                if review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:
+                    break
             except Exception as exc:
                 last_error = exc
                 logger.warning(f"Candidate {candidate_index + 1} failed for {standard.code}: {exc}")
@@ -587,13 +586,15 @@ class QuestionService:
             raise RuntimeError(f"No valid candidates generated for {standard.code}. Last error: {last_error}")
 
         approved = [candidate for candidate in candidates if candidate["review"].get("approved")]
-        best = max(approved or candidates, key=lambda candidate: candidate["score"])
-        if not best["review"].get("approved") and actual_quality_mode == "quality":
+        if not approved:
+            best_rejected = max(candidates, key=lambda candidate: candidate["score"])
             raise RuntimeError(
-                f"No candidate passed review for {standard.code}. "
-                f"Best score: {best['score']:.2f}. Notes: {best['review'].get('improvement_notes')}"
+                f"No generated question passed review for {standard.code}. "
+                f"Best score: {best_rejected['score']:.2f}. "
+                f"Notes: {best_rejected['review'].get('improvement_notes')}"
             )
 
+        best = max(approved, key=lambda candidate: candidate["score"])
         question_data = best["question"]
         question_data["review"] = best["review"]
         question_data["quality_score"] = best["score"]

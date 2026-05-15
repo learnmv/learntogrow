@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Ollama settings
     OLLAMA_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "deepseek-r1:1.5b"
+    OLLAMA_MODEL: str = "gemma4:e4b"
     OLLAMA_TIMEOUT: int = 300
     OLLAMA_GENERATION_WORKERS: int = 15
     OLLAMA_QUALITY_MODE: str = "reviewed"
