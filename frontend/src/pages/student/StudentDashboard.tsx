@@ -1,7 +1,19 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
-import { ArrowRight, BookOpen, ClipboardList, Play, Target, BarChart3, RotateCcw, Zap } from 'lucide-react'
+import {
+  ArrowRight,
+  BarChart3,
+  BookOpen,
+  CheckCircle2,
+  ClipboardList,
+  Lock,
+  Play,
+  RotateCcw,
+  Sparkles,
+  Target,
+  Zap,
+} from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { SubjectSelector } from '../../components/ui/SubjectSelector'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
@@ -143,6 +155,7 @@ export function StudentDashboard() {
   const canStartQuiz = selectedSubject !== '' && selectedGrade !== ''
   const hasMistakes = mistakes.length > 0
   const recommendedSkill = skillMap.find((domain) => domain.recommended)
+  const nextAssignment = assignments.find((assignment) => assignment.status !== 'completed')
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -157,12 +170,6 @@ export function StudentDashboard() {
       </motion.div>
 
       <DailyGoalCard goal={dailyGoal} loading={loadingDailyGoal} />
-
-      <AssignedQuizzesSection
-        assignments={assignments}
-        loading={loadingAssignments}
-        onOpen={(assignmentId) => navigate(`/student/assigned-quiz/${assignmentId}`)}
-      />
 
       {/* Quick Start */}
       <motion.div
@@ -206,6 +213,27 @@ export function StudentDashboard() {
           </p>
         )}
       </motion.div>
+
+      <LearningPathSection
+        dailyGoal={dailyGoal}
+        loadingDailyGoal={loadingDailyGoal}
+        canStartQuiz={canStartQuiz}
+        mistakeCount={mistakes.length}
+        skillMap={skillMap}
+        loadingSkillMap={loadingSkillMap}
+        nextAssignment={nextAssignment}
+        loadingAssignments={loadingAssignments}
+        onStartQuiz={handleStartQuiz}
+        onPracticeMistakes={handlePracticeMistakes}
+        onPracticeSkill={(domain) => handleAdaptivePractice(domain.domain_id, domain.domain_name)}
+        onOpenAssignment={(assignmentId) => navigate(`/student/assigned-quiz/${assignmentId}`)}
+      />
+
+      <AssignedQuizzesSection
+        assignments={assignments}
+        loading={loadingAssignments}
+        onOpen={(assignmentId) => navigate(`/student/assigned-quiz/${assignmentId}`)}
+      />
 
       {/* Skill Map */}
       {canStartQuiz && (
@@ -280,6 +308,288 @@ export function StudentDashboard() {
       </motion.div>
     </div>
   )
+}
+
+type LearningPathStatus = 'ready' | 'done' | 'locked' | 'loading'
+
+interface LearningPathStep {
+  id: string
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  description: string
+  status: LearningPathStatus
+  actionLabel?: string
+  onAction?: () => void
+}
+
+interface LearningPathSectionProps {
+  dailyGoal: DailyGoal | null
+  loadingDailyGoal: boolean
+  canStartQuiz: boolean
+  mistakeCount: number
+  skillMap: SkillMapDomain[]
+  loadingSkillMap: boolean
+  nextAssignment?: QuizAssignmentSummary
+  loadingAssignments: boolean
+  onStartQuiz: () => void
+  onPracticeMistakes: () => void
+  onPracticeSkill: (domain: SkillMapDomain) => void
+  onOpenAssignment: (assignmentId: number) => void
+}
+
+function LearningPathSection({
+  dailyGoal,
+  loadingDailyGoal,
+  canStartQuiz,
+  mistakeCount,
+  skillMap,
+  loadingSkillMap,
+  nextAssignment,
+  loadingAssignments,
+  onStartQuiz,
+  onPracticeMistakes,
+  onPracticeSkill,
+  onOpenAssignment,
+}: LearningPathSectionProps) {
+  const focusSkill =
+    skillMap.find((domain) => domain.recommended && domain.active_questions > 0) ??
+    skillMap.find((domain) => domain.active_questions > 0)
+  const dailyTarget = dailyGoal?.target ?? 10
+  const answeredToday = dailyGoal?.answered_today ?? 0
+  const remainingToday = dailyGoal?.remaining ?? dailyTarget
+  const goalProgress = Math.min(Math.round((dailyGoal?.progress ?? 0) * 100), 100)
+
+  const steps: LearningPathStep[] = [
+    {
+      id: 'assignment',
+      icon: ClipboardList,
+      title: loadingAssignments
+        ? 'Checking assigned quizzes'
+        : nextAssignment
+          ? nextAssignment.status === 'in_progress'
+            ? `Continue ${nextAssignment.title}`
+            : `Start ${nextAssignment.title}`
+          : 'No assigned quizzes waiting',
+      description: loadingAssignments
+        ? 'Assigned work will appear here when it is ready.'
+        : nextAssignment
+          ? formatAssignmentMeta(nextAssignment)
+          : 'You are clear on assigned work right now.',
+      status: loadingAssignments ? 'loading' : nextAssignment ? 'ready' : 'done',
+      actionLabel: nextAssignment
+        ? nextAssignment.status === 'in_progress'
+          ? 'Continue'
+          : 'Start'
+        : undefined,
+      onAction: nextAssignment ? () => onOpenAssignment(nextAssignment.id) : undefined,
+    },
+    {
+      id: 'mistakes',
+      icon: RotateCcw,
+      title: !canStartQuiz
+        ? 'Choose a subject and grade'
+        : mistakeCount > 0
+          ? 'Review missed standards'
+          : 'Mistakes clear',
+      description: !canStartQuiz
+        ? 'Mistake review unlocks after a subject and grade are selected.'
+        : mistakeCount > 0
+          ? `${mistakeCount} standard${mistakeCount === 1 ? '' : 's'} ready for another try.`
+          : 'No missed standards found for this subject and grade.',
+      status: !canStartQuiz ? 'locked' : mistakeCount > 0 ? 'ready' : 'done',
+      actionLabel: canStartQuiz && mistakeCount > 0 ? 'Practice mistakes' : undefined,
+      onAction: canStartQuiz && mistakeCount > 0 ? onPracticeMistakes : undefined,
+    },
+    {
+      id: 'focus-skill',
+      icon: Zap,
+      title: !canStartQuiz
+        ? 'Pick a focus skill'
+        : loadingSkillMap
+          ? 'Building skill map'
+          : focusSkill
+            ? `Practice ${focusSkill.domain_name}`
+            : 'No adaptive practice ready',
+      description: !canStartQuiz
+        ? 'Adaptive practice starts after the subject and grade are selected.'
+        : loadingSkillMap
+          ? 'Your domain strengths are being checked.'
+          : focusSkill
+            ? focusSkill.recommended
+              ? focusSkill.recommendation_reason
+              : `${focusSkill.level_description} ${focusSkill.active_questions} questions ready.`
+            : 'No domains with active questions were found for this selection.',
+      status: !canStartQuiz ? 'locked' : loadingSkillMap ? 'loading' : focusSkill ? 'ready' : 'locked',
+      actionLabel: canStartQuiz && !loadingSkillMap && focusSkill ? 'Practice skill' : undefined,
+      onAction: canStartQuiz && !loadingSkillMap && focusSkill ? () => onPracticeSkill(focusSkill) : undefined,
+    },
+    {
+      id: 'daily-goal',
+      icon: Target,
+      title: loadingDailyGoal
+        ? 'Checking daily goal'
+        : dailyGoal?.completed
+          ? 'Daily goal complete'
+          : `${remainingToday} question${remainingToday === 1 ? '' : 's'} left today`,
+      description: loadingDailyGoal
+        ? 'Today\'s progress will appear here.'
+        : dailyGoal?.completed
+          ? dailyGoal.message
+          : `${answeredToday} of ${dailyTarget} answered today. Keep the streak moving with a short quiz.`,
+      status: loadingDailyGoal ? 'loading' : dailyGoal?.completed ? 'done' : canStartQuiz ? 'ready' : 'locked',
+      actionLabel: !loadingDailyGoal && !dailyGoal?.completed && canStartQuiz ? 'Start quiz' : undefined,
+      onAction: !loadingDailyGoal && !dailyGoal?.completed && canStartQuiz ? onStartQuiz : undefined,
+    },
+  ]
+
+  const readyCount = steps.filter((step) => step.status === 'ready').length
+  const summary = readyCount > 0
+    ? `${readyCount} next step${readyCount === 1 ? '' : 's'} ready`
+    : canStartQuiz
+      ? 'You are caught up for this selection'
+      : 'Select a subject and grade to unlock practice'
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.12 }}
+      className="bg-surface-elevated rounded-2xl p-6 shadow-sm border border-border mb-8"
+    >
+      <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="p-2.5 rounded-xl bg-coral-100">
+            <Sparkles className="w-5 h-5 text-coral-600" />
+          </div>
+          <div>
+            <h2 className="text-lg font-display font-semibold text-text">Today's Learning Path</h2>
+            <p className="mt-1 text-sm text-text-muted font-body">{summary}</p>
+          </div>
+        </div>
+
+        <div className="w-full md:w-56">
+          <div className="flex justify-between text-xs text-text-muted font-body mb-1">
+            <span>Daily goal</span>
+            <span>{goalProgress}%</span>
+          </div>
+          <div className="h-2 bg-sage-100 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-coral-500 rounded-full transition-all duration-500"
+              style={{ width: `${goalProgress}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <ol className="mt-5 divide-y divide-border">
+        {steps.map((step, index) => (
+          <LearningPathStepRow key={step.id} step={step} stepNumber={index + 1} />
+        ))}
+      </ol>
+    </motion.section>
+  )
+}
+
+interface LearningPathStepRowProps {
+  step: LearningPathStep
+  stepNumber: number
+}
+
+function LearningPathStepRow({ step, stepNumber }: LearningPathStepRowProps) {
+  const Icon = step.icon
+  const statusStyles = getPathStatusStyles(step.status)
+
+  return (
+    <li className="flex flex-col gap-3 py-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-start gap-4">
+        <div
+          className={`mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${statusStyles.iconBg}`}
+        >
+          {step.status === 'done' ? (
+            <CheckCircle2 className={`w-5 h-5 ${statusStyles.icon}`} />
+          ) : step.status === 'locked' ? (
+            <Lock className={`w-5 h-5 ${statusStyles.icon}`} />
+          ) : step.status === 'loading' ? (
+            <div className="w-5 h-5 border-2 border-sage-200 border-t-sage-600 rounded-full animate-spin" />
+          ) : (
+            <Icon className={`w-5 h-5 ${statusStyles.icon}`} />
+          )}
+        </div>
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-display font-semibold text-text-muted">Step {stepNumber}</span>
+            <span className={`px-2 py-0.5 rounded-md text-xs font-display font-medium ${statusStyles.badge}`}>
+              {getPathStatusLabel(step.status)}
+            </span>
+          </div>
+          <h3 className="mt-1 font-display font-semibold text-text">{step.title}</h3>
+          <p className="mt-1 text-sm text-text-muted font-body">{step.description}</p>
+        </div>
+      </div>
+
+      {step.actionLabel && step.onAction && (
+        <button
+          onClick={step.onAction}
+          className="ml-14 md:ml-0 inline-flex items-center justify-center gap-2 px-4 py-2 bg-sage-600 text-white rounded-lg font-display font-medium text-sm hover:bg-sage-700 transition-colors shadow-sm hover:shadow-md"
+        >
+          {step.actionLabel}
+          <ArrowRight className="w-4 h-4" />
+        </button>
+      )}
+    </li>
+  )
+}
+
+function getPathStatusLabel(status: LearningPathStatus): string {
+  if (status === 'ready') return 'Ready'
+  if (status === 'done') return 'Done'
+  if (status === 'loading') return 'Loading'
+  return 'Locked'
+}
+
+function getPathStatusStyles(status: LearningPathStatus): { iconBg: string; icon: string; badge: string } {
+  if (status === 'ready') {
+    return {
+      iconBg: 'bg-sage-100',
+      icon: 'text-sage-700',
+      badge: 'bg-sage-100 text-sage-700',
+    }
+  }
+  if (status === 'done') {
+    return {
+      iconBg: 'bg-sage-100',
+      icon: 'text-sage-600',
+      badge: 'bg-sage-100 text-sage-700',
+    }
+  }
+  if (status === 'loading') {
+    return {
+      iconBg: 'bg-sage-50',
+      icon: 'text-sage-600',
+      badge: 'bg-sage-50 text-sage-700',
+    }
+  }
+  return {
+    iconBg: 'bg-coral-100',
+    icon: 'text-coral-600',
+    badge: 'bg-coral-100 text-coral-700',
+  }
+}
+
+function formatAssignmentMeta(assignment: QuizAssignmentSummary): string {
+  const questionLabel = `${assignment.question_count} question${assignment.question_count === 1 ? '' : 's'}`
+  const subjectLabel = assignment.subject_name ?? 'Mixed subject'
+  const dueLabel = formatDueDate(assignment.due_at)
+  return dueLabel
+    ? `${subjectLabel} - ${questionLabel} - due ${dueLabel}`
+    : `${subjectLabel} - ${questionLabel}`
+}
+
+function formatDueDate(value: string | null): string | null {
+  if (!value) return null
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
 interface AssignedQuizzesSectionProps {

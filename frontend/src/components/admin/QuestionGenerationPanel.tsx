@@ -29,7 +29,7 @@ type GenMode =
   | 'smart-balanced'
   | 'smart-difficulty'
   | 'smart-diagrams';
-type QualityMode = 'fast' | 'reviewed' | 'quality';
+type QualityMode = 'reviewed' | 'quality';
 type DisplayStandard = Pick<Standard, 'id' | 'code' | 'description'>;
 
 const POLL_INTERVAL = 2000;
@@ -421,15 +421,14 @@ export function QuestionGenerationPanel() {
               </select>
             </div>
             <div>
-              <label className="block text-sm text-text-muted mb-1.5">Quality</label>
+              <label className="block text-sm text-text-muted mb-1.5">Review Mode</label>
               <select
                 value={qualityMode}
                 onChange={(e) => setQualityMode(e.target.value as QualityMode)}
                 className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
               >
-                <option value="fast">Fast</option>
-                <option value="reviewed">Reviewed</option>
-                <option value="quality">Quality</option>
+                <option value="reviewed">Auto Review</option>
+                <option value="quality">Best Reviewed</option>
               </select>
             </div>
             <div>
@@ -457,15 +456,14 @@ export function QuestionGenerationPanel() {
               />
             </div>
             <div>
-              <label className="block text-sm text-text-muted mb-1.5">Repairs</label>
+              <label className="block text-sm text-text-muted mb-1.5">Review Retries</label>
               <input
                 type="number"
                 min={0}
                 max={3}
                 value={repairAttempts}
-                disabled={qualityMode === 'fast'}
                 onChange={(e) => setRepairAttempts(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500 disabled:opacity-50"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
               />
             </div>
             <div>
@@ -476,9 +474,8 @@ export function QuestionGenerationPanel() {
                 max={1}
                 step={0.05}
                 value={minReviewScore}
-                disabled={qualityMode === 'fast'}
                 onChange={(e) => setMinReviewScore(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500 disabled:opacity-50"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
               />
             </div>
           </div>
