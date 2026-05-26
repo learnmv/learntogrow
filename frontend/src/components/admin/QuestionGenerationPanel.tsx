@@ -57,7 +57,7 @@ export function QuestionGenerationPanel() {
   const [timeout, setTimeout] = useState(300);
   const [qualityMode, setQualityMode] = useState<QualityMode>('reviewed');
   const [candidateCount, setCandidateCount] = useState(3);
-  const [repairAttempts, setRepairAttempts] = useState(1);
+  const [repairAttempts, setRepairAttempts] = useState(0);
   const [minReviewScore, setMinReviewScore] = useState(0.75);
 
   // -- Job state --

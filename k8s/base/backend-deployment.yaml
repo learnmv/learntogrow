@@ -76,7 +76,7 @@ spec:
         - name: OLLAMA_CANDIDATE_COUNT
           value: "1"
         - name: OLLAMA_MAX_REPAIR_ATTEMPTS
-          value: "1"
+          value: "0"
         - name: OLLAMA_MIN_REVIEW_SCORE
           value: "0.75"
         - name: PARENT_ASSISTANT_MODEL

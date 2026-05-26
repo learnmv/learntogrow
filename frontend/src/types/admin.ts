@@ -9,7 +9,7 @@ export interface QuestionGenerateRequest {
   question_type: 'multiple_choice' | 'open_ended';
   model?: string;
   timeout?: number;
-  quality_mode?: 'fast' | 'reviewed' | 'quality';
+  quality_mode?: 'reviewed' | 'quality';
   candidate_count?: number;
   max_repair_attempts?: number;
   min_review_score?: number;
@@ -80,7 +80,7 @@ export interface CreateGenerationJobRequest {
   question_type?: 'multiple_choice' | 'open_ended';
   model?: string;
   timeout?: number;
-  quality_mode?: 'fast' | 'reviewed' | 'quality';
+  quality_mode?: 'reviewed' | 'quality';
   candidate_count?: number;
   max_repair_attempts?: number;
   min_review_score?: number;

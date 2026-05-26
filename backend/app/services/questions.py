@@ -293,10 +293,12 @@ class QuestionService:
         last_error = None
 
         for attempt in range(MAX_RETRIES):
+            started_at = time.perf_counter()
             try:
                 temperature = BASE_TEMPERATURE + (attempt * TEMPERATURE_INCREMENT)
                 raw = self._call_ollama_json(prompt, model, timeout, temperature=temperature)
                 question_data = self._normalize_question_data(raw, standard, difficulty, question_type)
+                elapsed = time.perf_counter() - started_at
                 self._audit(
                     audit_callback,
                     stage="candidate",
@@ -307,10 +309,18 @@ class QuestionService:
                     response_payload=question_data,
                     candidate_index=candidate_index,
                     attempt=attempt,
-                    notes=f"Generated valid candidate on attempt {attempt + 1}",
+                    notes=f"Generated valid candidate on attempt {attempt + 1} in {elapsed:.2f}s",
+                )
+                logger.info(
+                    "Generated candidate for %s in %.2fs (candidate=%s attempt=%s)",
+                    standard.code,
+                    elapsed,
+                    candidate_index,
+                    attempt,
                 )
                 return question_data
             except ValueError as exc:
+                elapsed = time.perf_counter() - started_at
                 logger.warning(f"Attempt {attempt + 1}: Validation failed: {exc}")
                 last_error = exc
                 self._audit(
@@ -323,12 +333,13 @@ class QuestionService:
                     response_payload={},
                     candidate_index=candidate_index,
                     attempt=attempt,
-                    notes=str(exc),
+                    notes=f"{exc} after {elapsed:.2f}s",
                 )
                 if attempt < MAX_RETRIES - 1:
                     time.sleep(BACKOFF_BASE ** attempt)
                 continue
             except json.JSONDecodeError as exc:
+                elapsed = time.perf_counter() - started_at
                 logger.warning(f"Attempt {attempt + 1}: Failed to parse JSON: {exc}")
                 last_error = exc
                 self._audit(
@@ -341,7 +352,7 @@ class QuestionService:
                     response_payload={},
                     candidate_index=candidate_index,
                     attempt=attempt,
-                    notes=f"Invalid JSON: {exc}",
+                    notes=f"Invalid JSON after {elapsed:.2f}s: {exc}",
                 )
                 continue
             except httpx.ConnectError as exc:
@@ -418,11 +429,15 @@ class QuestionService:
         context = self._quality_context(standard, difficulty, question_type, min_review_score)
         context["question_json"] = json.dumps(question_data, default=str)
         prompt = load_prompt_template(self.db, "question_reviewer").format(**context)
+        started_at = time.perf_counter()
         review = self._call_ollama_json(prompt, model, timeout, temperature=0.15)
+        elapsed = time.perf_counter() - started_at
         score = float(review.get("score", 0) or 0)
         issues = review.get("issues") if isinstance(review.get("issues"), list) else []
         approved = bool(review.get("approved")) and score >= min_review_score and not issues
         review["approved"] = approved
+        notes = review.get("improvement_notes")
+        timed_notes = f"{notes} Review call {elapsed:.2f}s." if notes else f"Review call {elapsed:.2f}s."
 
         self._audit(
             audit_callback,
@@ -432,9 +447,17 @@ class QuestionService:
             model=model,
             request_payload={"standard_id": standard.id, "question": question_data},
             response_payload=review,
-            notes=review.get("improvement_notes"),
+            notes=timed_notes,
             score=score,
             candidate_index=candidate_index,
+        )
+        logger.info(
+            "Reviewed candidate for %s in %.2fs (candidate=%s approved=%s score=%.2f)",
+            standard.code,
+            elapsed,
+            candidate_index,
+            approved,
+            score,
         )
         return review
 
@@ -538,13 +561,14 @@ class QuestionService:
 
         plan: dict = {}
         prompt = base_prompt
-        review_attempts = actual_candidate_count
+        attempts_to_review = actual_candidate_count
         if actual_quality_mode in {"fast", "reviewed"}:
-            review_attempts = max(1, actual_max_repairs + 1)
+            attempts_to_review = max(1, actual_max_repairs + 1)
 
         candidates = []
         last_error = None
-        for candidate_index in range(review_attempts):
+        started_at = time.perf_counter()
+        for candidate_index in range(attempts_to_review):
             try:
                 candidate = self._generate_candidate(
                     standard=standard,
@@ -575,7 +599,6 @@ class QuestionService:
                         "score": float(review.get("score", 0) or 0),
                     }
                 )
-
                 if review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:
                     break
             except Exception as exc:
@@ -599,5 +622,13 @@ class QuestionService:
         question_data["review"] = best["review"]
         question_data["quality_score"] = best["score"]
         question_data["planner"] = plan
-        logger.info(f"Generated question for {standard.code} with score {best['score']:.2f}")
+        elapsed = time.perf_counter() - started_at
+        logger.info(
+            "Generated reviewed question for %s with score %.2f in %.2fs (%s reviewed attempt%s)",
+            standard.code,
+            best["score"],
+            elapsed,
+            len(candidates),
+            "" if len(candidates) == 1 else "s",
+        )
         return question_data
