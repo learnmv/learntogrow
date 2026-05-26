@@ -12,6 +12,8 @@ import type {
   QuestionInsightsResponse,
   SmartFillRequest,
   SmartFillResponse,
+  AdminChatRequest,
+  AdminChatResponse,
 } from '../types/admin';
 import type { User } from '../types/auth';
 import type { QuestionFromDB } from '../types/questions';
@@ -190,4 +192,11 @@ export async function getQuestionInsights(subjectId?: number, gradeId?: number):
  */
 export async function getSmartFillSuggestions(data: SmartFillRequest): Promise<SmartFillResponse> {
   return post<SmartFillResponse>('/admin/smart-fill-suggestions', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Chat directly with the configured admin Ollama model
+ */
+export async function sendAdminChatMessage(data: AdminChatRequest): Promise<AdminChatResponse> {
+  return post<AdminChatResponse>('/admin/chat', data, { headers: getAuthHeaders() });
 }

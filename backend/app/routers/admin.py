@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, AsyncIterator
 import asyncio
 import json
+import httpx
 
 from app.dependencies import get_db
 from app.services import AdminService, QuestionGenerationJobService
+from app.services.admin_chat import AdminChatService
 from app.routers.auth import require_role
 from app.schemas.auth import UserResponse
 from app.schemas.admin import (
@@ -16,6 +18,8 @@ from app.schemas.admin import (
     AdminDashboardStats,
     BulkDeleteRequest,
     SmartFillRequest,
+    AdminChatRequest,
+    AdminChatResponse,
 )
 from app.schemas.generation_job import (
     GenerationJobCreateRequest,
@@ -173,6 +177,39 @@ def reject_parent_link(
         )
 
     return {"message": "Link request rejected"}
+
+
+# ==================== Admin Model Chat ====================
+
+@router.post("/chat", response_model=AdminChatResponse)
+def chat_with_model(
+    request: AdminChatRequest,
+    current_user: dict = Depends(require_role(["admin"])),
+):
+    """Chat directly with the configured Ollama model."""
+    service = AdminChatService()
+    try:
+        return service.chat(request.messages, request.temperature)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The model took too long to respond",
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not connect to Ollama",
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ollama returned HTTP {exc.response.status_code}",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
 
 
 # ==================== Question Management ====================

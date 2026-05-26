@@ -126,3 +126,21 @@ class SmartFillResponse(BaseModel):
     suggestions: List[SmartFillSuggestion]
     total_suggested: int
     estimated_generation_time: str
+
+
+class AdminChatMessage(BaseModel):
+    """Single message in the admin model chat."""
+    role: str = Field(..., pattern="^(system|user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=12000)
+
+
+class AdminChatRequest(BaseModel):
+    """Admin request for direct Ollama chat mode."""
+    messages: List[AdminChatMessage] = Field(..., min_length=1, max_length=40)
+    temperature: float = Field(0.3, ge=0, le=1)
+
+
+class AdminChatResponse(BaseModel):
+    """Response from the configured Ollama chat model."""
+    message: AdminChatMessage
+    model: str

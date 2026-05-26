@@ -164,3 +164,18 @@ export interface SmartFillResponse {
   total_suggested: number;
   estimated_generation_time: string;
 }
+
+export interface AdminChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface AdminChatRequest {
+  messages: AdminChatMessage[];
+  temperature?: number;
+}
+
+export interface AdminChatResponse {
+  message: AdminChatMessage;
+  model: string;
+}

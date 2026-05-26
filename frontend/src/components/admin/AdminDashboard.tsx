@@ -9,6 +9,7 @@ import {
   Loader2,
   HelpCircle,
   BarChart2,
+  MessageSquare,
 } from 'lucide-react';
 import { getDashboardStats } from '../../services/admin';
 import { QuestionGenerationPanel } from './QuestionGenerationPanel';
@@ -17,9 +18,10 @@ import { PendingLinks } from './PendingLinks';
 import { PromptEditor } from './PromptEditor';
 import { QuestionsTab } from './QuestionsTab';
 import { QuestionInsightsPanel } from './QuestionInsightsPanel';
+import { AdminChat } from './AdminChat';
 import type { AdminDashboardStats } from '../../types/admin';
 
-type Tab = 'overview' | 'insights' | 'generate' | 'questions' | 'prompts' | 'users' | 'links';
+type Tab = 'overview' | 'insights' | 'generate' | 'questions' | 'prompts' | 'users' | 'links' | 'chat';
 
 export function AdminDashboard() {
   const [activeTab, setActiveTab] = useState<Tab>('overview');
@@ -36,8 +38,8 @@ export function AdminDashboard() {
       setLoading(true);
       const data = await getDashboardStats();
       setStats(data);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load dashboard stats');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard stats');
     } finally {
       setLoading(false);
     }
@@ -51,6 +53,7 @@ export function AdminDashboard() {
     { id: 'prompts' as Tab, label: 'Prompts', icon: FileText },
     { id: 'users' as Tab, label: 'User Management', icon: Users },
     { id: 'links' as Tab, label: 'Pending Links', icon: Link2 },
+    { id: 'chat' as Tab, label: 'Chat', icon: MessageSquare },
   ];
 
   if (loading) {
@@ -168,6 +171,12 @@ export function AdminDashboard() {
           {activeTab === 'links' && (
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
               <PendingLinks />
+            </motion.div>
+          )}
+
+          {activeTab === 'chat' && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+              <AdminChat />
             </motion.div>
           )}
         </div>
