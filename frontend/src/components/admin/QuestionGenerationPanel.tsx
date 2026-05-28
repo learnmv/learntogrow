@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, Loader2, CheckCircle, AlertCircle, Zap, RefreshCw,
-  ChevronDown, ChevronUp, Clock, Box, List,
+  ChevronDown, ChevronUp, Clock, Box, List, ShieldCheck, Layers, Gauge,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -22,10 +22,23 @@ import type {
   SmartFillSuggestion,
 } from '../../types/admin';
 
-type GenMode = 'custom' | 'smart-gaps' | 'smart-struggling' | 'smart-balanced';
+type GenMode =
+  | 'custom'
+  | 'smart-gaps'
+  | 'smart-struggling'
+  | 'smart-balanced'
+  | 'smart-difficulty'
+  | 'smart-diagrams';
+type QualityMode = 'reviewed' | 'quality';
+type DisplayStandard = Pick<Standard, 'id' | 'code' | 'description'>;
 
 const POLL_INTERVAL = 2000;
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+const MAX_SMART_STANDARDS = 10;
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
 export function QuestionGenerationPanel() {
   // -- Curriculum state --
@@ -42,8 +55,10 @@ export function QuestionGenerationPanel() {
   const [questionsPerStandard, setQuestionsPerStandard] = useState(1);
   const [questionType, setQuestionType] = useState<'multiple_choice' | 'open_ended'>('multiple_choice');
   const [timeout, setTimeout] = useState(300);
-
-  const maxStandards = 10;
+  const [qualityMode, setQualityMode] = useState<QualityMode>('reviewed');
+  const [candidateCount, setCandidateCount] = useState(3);
+  const [repairAttempts, setRepairAttempts] = useState(0);
+  const [minReviewScore, setMinReviewScore] = useState(0.75);
 
   // -- Job state --
   const [activeJob, setActiveJob] = useState<GenerationJob | null>(null);
@@ -55,6 +70,13 @@ export function QuestionGenerationPanel() {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const displayStandards: DisplayStandard[] = mode === 'custom'
+    ? standards
+    : suggestions.map((s) => ({
+      id: s.standard_id,
+      code: s.standard_code,
+      description: s.standard_description,
+    }));
 
   // -- Load subjects on mount --
   useEffect(() => {
@@ -81,17 +103,7 @@ export function QuestionGenerationPanel() {
     }
   }, [selectedSubject, selectedGrade]);
 
-  // -- Load suggestions when smart mode is selected --
-  useEffect(() => {
-    if (mode.startsWith('smart-') && selectedSubject) {
-      loadSuggestions();
-    } else {
-      setSuggestions([]);
-      setSelectedStandards([]);
-    }
-  }, [mode, selectedSubject, selectedGrade, maxStandards]);
-
-  async function loadSuggestions() {
+  const loadSuggestions = useCallback(async () => {
     if (!selectedSubject) return;
     const fillMode = mode.replace('smart-', '') as SmartFillRequest['fill_mode'];
     try {
@@ -100,16 +112,26 @@ export function QuestionGenerationPanel() {
         subject_id: selectedSubject,
         grade_id: selectedGrade ? Number(selectedGrade) : undefined,
         fill_mode: fillMode,
-        max_standards: maxStandards,
+        max_standards: MAX_SMART_STANDARDS,
       });
       setSuggestions(res.suggestions);
       setSelectedStandards(res.suggestions.map((s) => s.standard_id));
-    } catch (err: any) {
-      toast.error('Failed to load suggestions', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Failed to load suggestions', { description: getErrorMessage(err) });
     } finally {
       setSuggestionsLoading(false);
     }
-  }
+  }, [mode, selectedGrade, selectedSubject]);
+
+  // -- Load suggestions when smart mode is selected --
+  useEffect(() => {
+    if (mode.startsWith('smart-') && selectedSubject) {
+      loadSuggestions();
+    } else {
+      setSuggestions([]);
+      setSelectedStandards([]);
+    }
+  }, [loadSuggestions, mode, selectedSubject]);
 
   async function loadRecentJobs() {
     try {
@@ -196,6 +218,10 @@ export function QuestionGenerationPanel() {
       subject_id: Number(selectedSubject),
       grade_id: selectedGrade ? Number(selectedGrade) : undefined,
       timeout: timeout,
+      quality_mode: qualityMode,
+      candidate_count: qualityMode === 'quality' ? candidateCount : 1,
+      max_repair_attempts: repairAttempts,
+      min_review_score: minReviewScore,
     };
 
     setLoading(true);
@@ -207,8 +233,8 @@ export function QuestionGenerationPanel() {
         description: `Job #${job.id}: ${job.total_standards} standards queued`,
       });
       startPolling(job.id);
-    } catch (err: any) {
-      toast.error('Failed to start generation', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Failed to start generation', { description: getErrorMessage(err) });
     } finally {
       setLoading(false);
     }
@@ -221,8 +247,8 @@ export function QuestionGenerationPanel() {
       setRecentJobs((prev) => [job, ...prev].slice(0, 10));
       toast.success('Retry started', { description: `Job #${job.id}` });
       startPolling(job.id);
-    } catch (err: any) {
-      toast.error('Retry failed', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Retry failed', { description: getErrorMessage(err) });
     }
   }
 
@@ -232,8 +258,8 @@ export function QuestionGenerationPanel() {
       toast.success('Job cancelled');
       const job = await getGenerationJob(jobId);
       setActiveJob(job);
-    } catch (err: any) {
-      toast.error('Cancel failed', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Cancel failed', { description: getErrorMessage(err) });
     }
   }
 
@@ -253,6 +279,8 @@ export function QuestionGenerationPanel() {
               { key: 'smart-gaps' as GenMode, label: 'Fill Gaps', icon: Zap },
               { key: 'smart-struggling' as GenMode, label: 'Struggling', icon: AlertCircle },
               { key: 'smart-balanced' as GenMode, label: 'Balanced', icon: List },
+              { key: 'smart-difficulty' as GenMode, label: 'Difficulty', icon: Gauge },
+              { key: 'smart-diagrams' as GenMode, label: 'Diagrams', icon: Layers },
             ].map((m) => (
               <button
                 key={m.key}
@@ -341,18 +369,10 @@ export function QuestionGenerationPanel() {
             </div>
           )}
 
-          {(mode === 'custom' ? standards : suggestions.map((s) => ({
-            id: s.standard_id,
-            code: s.standard_code,
-            description: s.standard_description,
-          })) as any[]).length > 0 && (
+          {displayStandards.length > 0 && (
             <div className="max-h-56 overflow-y-auto border border-border rounded-xl">
               <div className="divide-y divide-border">
-                {(mode === 'custom' ? standards : suggestions.map((s) => ({
-                  id: s.standard_id,
-                  code: s.standard_code,
-                  description: s.standard_description,
-                }))).map((s: any) => (
+                {displayStandards.map((s) => (
                   <label
                     key={s.id}
                     className="flex items-center gap-3 p-3 hover:bg-sage-50 cursor-pointer"
@@ -401,6 +421,17 @@ export function QuestionGenerationPanel() {
               </select>
             </div>
             <div>
+              <label className="block text-sm text-text-muted mb-1.5">Review Mode</label>
+              <select
+                value={qualityMode}
+                onChange={(e) => setQualityMode(e.target.value as QualityMode)}
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
+              >
+                <option value="reviewed">Auto Review</option>
+                <option value="quality">Best Reviewed</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-sm text-text-muted mb-1.5">Timeout (s)</label>
               <input
                 type="number"
@@ -409,6 +440,41 @@ export function QuestionGenerationPanel() {
                 step={30}
                 value={timeout}
                 onChange={(e) => setTimeout(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-muted mb-1.5">Candidates</label>
+              <input
+                type="number"
+                min={1}
+                max={5}
+                value={qualityMode === 'quality' ? candidateCount : 1}
+                disabled={qualityMode !== 'quality'}
+                onChange={(e) => setCandidateCount(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-muted mb-1.5">Review Retries</label>
+              <input
+                type="number"
+                min={0}
+                max={3}
+                value={repairAttempts}
+                onChange={(e) => setRepairAttempts(Number(e.target.value))}
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-muted mb-1.5">Min Score</label>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={minReviewScore}
+                onChange={(e) => setMinReviewScore(Number(e.target.value))}
                 className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
               />
             </div>
@@ -481,6 +547,21 @@ export function QuestionGenerationPanel() {
                 </div>
               </div>
 
+              <div className="mb-4 grid grid-cols-3 gap-2 text-xs">
+                <div className="rounded-xl bg-surface-muted px-3 py-2">
+                  <div className="text-text-subtle">Mode</div>
+                  <div className="font-medium text-text capitalize">{activeJob.quality_mode}</div>
+                </div>
+                <div className="rounded-xl bg-surface-muted px-3 py-2">
+                  <div className="text-text-subtle">Candidates</div>
+                  <div className="font-medium text-text">{activeJob.candidate_count}</div>
+                </div>
+                <div className="rounded-xl bg-surface-muted px-3 py-2">
+                  <div className="text-text-subtle">Min Score</div>
+                  <div className="font-medium text-text">{Math.round(activeJob.min_review_score * 100)}%</div>
+                </div>
+              </div>
+
               {/* Per-standard mini list */}
               {activeJob.job_standards && activeJob.job_standards.length > 0 && (
                 <div className="max-h-48 overflow-y-auto space-y-1 mb-4">
@@ -494,6 +575,12 @@ export function QuestionGenerationPanel() {
                       {js.status === 'running' && <Loader2 className="w-3.5 h-3.5 text-sage-500 animate-spin shrink-0" />}
                       {js.status === 'pending' && <Clock className="w-3.5 h-3.5 text-text-subtle shrink-0" />}
                       <span className="text-text-muted">{js.standard_code ?? `Standard ${js.standard_id}`}</span>
+                      {js.avg_quality_score !== null && js.avg_quality_score !== undefined && (
+                        <span className="ml-auto inline-flex items-center gap-1 text-sage-700">
+                          <ShieldCheck className="w-3 h-3" />
+                          {Math.round(js.avg_quality_score * 100)}%
+                        </span>
+                      )}
                       {js.error && <span className="text-coral-500 ml-auto truncate max-w-[120px]">{js.error}</span>}
                     </div>
                   ))}
@@ -567,6 +654,9 @@ export function QuestionGenerationPanel() {
                       </div>
                       <div className="text-text-muted">
                         {job.completed_standards}/{job.total_standards} standards · {job.questions_created} questions
+                      </div>
+                      <div className="text-text-subtle mt-1 capitalize">
+                        {job.quality_mode} mode · {job.candidate_count} candidate{job.candidate_count === 1 ? '' : 's'}
                       </div>
                       {job.errors && job.errors.length > 0 && (
                         <div className="text-coral-500 mt-1">{job.errors.length} errors</div>

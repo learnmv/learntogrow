@@ -5,6 +5,12 @@ from typing import Any, Optional
 import httpx
 
 from app.config import get_settings
+from app.services.ollama_client import (
+    ollama_endpoint,
+    ollama_headers,
+    ollama_supports_structured_outputs,
+    parse_ollama_json_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,26 +44,32 @@ class ParentAssistantLLMService:
 
     def __init__(self):
         self.settings = get_settings()
-        self.ollama_url = f"{self.settings.OLLAMA_URL}/api/generate"
+        self.ollama_url = ollama_endpoint(self.settings, "generate")
+
+    def _json_payload(self, prompt: str, temperature: float) -> dict[str, Any]:
+        payload = {
+            "model": self.settings.PARENT_ASSISTANT_MODEL,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": temperature},
+        }
+        if ollama_supports_structured_outputs(self.settings):
+            payload["format"] = "json"
+        return payload
 
     def plan(self, message: str, context: dict[str, Any]) -> Optional[dict[str, Any]]:
         prompt = self._build_prompt(message, context)
         try:
             response = httpx.post(
                 self.ollama_url,
-                json={
-                    "model": self.settings.PARENT_ASSISTANT_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.1},
-                },
+                json=self._json_payload(prompt, temperature=0.1),
+                headers=ollama_headers(self.settings),
                 timeout=self.settings.PARENT_ASSISTANT_TIMEOUT,
             )
             response.raise_for_status()
             payload = response.json()
             raw_plan = payload.get("response", "{}")
-            parsed = json.loads(raw_plan)
+            parsed = parse_ollama_json_response(raw_plan)
             return self._clean_plan(parsed)
         except Exception as exc:
             logger.warning("Parent assistant LLM planner unavailable: %s", exc)
@@ -73,19 +85,14 @@ class ParentAssistantLLMService:
         try:
             response = httpx.post(
                 self.ollama_url,
-                json={
-                    "model": self.settings.PARENT_ASSISTANT_MODEL,
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json",
-                    "options": {"temperature": 0.1},
-                },
+                json=self._json_payload(prompt, temperature=0.1),
+                headers=ollama_headers(self.settings),
                 timeout=self.settings.PARENT_ASSISTANT_TIMEOUT,
             )
             response.raise_for_status()
             payload = response.json()
             raw_plan = payload.get("response", "{}")
-            parsed = json.loads(raw_plan)
+            parsed = parse_ollama_json_response(raw_plan)
             return self._clean_tool_call(parsed)
         except Exception as exc:
             logger.warning("Parent assistant tool planner unavailable: %s", exc)
@@ -108,6 +115,7 @@ class ParentAssistantLLMService:
                     "stream": False,
                     "options": {"temperature": 0.2},
                 },
+                headers=ollama_headers(self.settings),
                 timeout=self.settings.PARENT_ASSISTANT_TIMEOUT,
             )
             response.raise_for_status()

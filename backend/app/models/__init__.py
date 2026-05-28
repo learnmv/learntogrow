@@ -7,7 +7,13 @@ from .question import Question
 from .geogebra import GeoGebra
 from .user import User, UserRole, ParentStudentLink, LinkStatus, PasswordResetToken, AnsweredQuestion
 from .prompt import QuestionPrompt
-from .generation_job import GenerationJob, GenerationJobStandard, JobStatus, JobStandardStatus
+from .generation_job import (
+    GenerationJob,
+    GenerationJobStandard,
+    JobStatus,
+    JobStandardStatus,
+    QuestionGenerationAudit,
+)
 
 from .student_ability import StudentDomainAbility
 from .quiz_assignment import QuizAssignment, QuizAssignmentQuestion
@@ -17,7 +23,7 @@ __all__ = [
     "Subject", "Grade", "Domain", "Cluster", "Standard", "Question", "GeoGebra",
     "User", "UserRole", "ParentStudentLink", "LinkStatus", "PasswordResetToken", "AnsweredQuestion",
     "QuestionPrompt",
-    "GenerationJob", "GenerationJobStandard", "JobStatus", "JobStandardStatus",
+    "GenerationJob", "GenerationJobStandard", "JobStatus", "JobStandardStatus", "QuestionGenerationAudit",
     "StudentDomainAbility", "QuizAssignment", "QuizAssignmentQuestion",
     "ParentAssistantThread", "ParentAssistantMessage", "ParentAssistantToolCall"
 ]

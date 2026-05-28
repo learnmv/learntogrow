@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, AsyncIterator
 import asyncio
 import json
+import httpx
 
 from app.dependencies import get_db
 from app.services import AdminService, QuestionGenerationJobService
+from app.services.admin_chat import AdminChatService
 from app.routers.auth import require_role
 from app.schemas.auth import UserResponse
 from app.schemas.admin import (
@@ -16,6 +18,8 @@ from app.schemas.admin import (
     AdminDashboardStats,
     BulkDeleteRequest,
     SmartFillRequest,
+    AdminChatRequest,
+    AdminChatResponse,
 )
 from app.schemas.generation_job import (
     GenerationJobCreateRequest,
@@ -175,6 +179,39 @@ def reject_parent_link(
     return {"message": "Link request rejected"}
 
 
+# ==================== Admin Model Chat ====================
+
+@router.post("/chat", response_model=AdminChatResponse)
+def chat_with_model(
+    request: AdminChatRequest,
+    current_user: dict = Depends(require_role(["admin"])),
+):
+    """Chat directly with the configured Ollama model."""
+    service = AdminChatService()
+    try:
+        return service.chat(request.messages, request.temperature)
+    except httpx.TimeoutException:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="The model took too long to respond",
+        )
+    except httpx.ConnectError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not connect to Ollama",
+        )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Ollama returned HTTP {exc.response.status_code}",
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
+
+
 # ==================== Question Management ====================
 
 @router.get("/questions", response_model=List[QuestionDBResponse])
@@ -330,6 +367,10 @@ def generate_questions_admin(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=request.quality_mode,
+        candidate_count=request.candidate_count,
+        max_repair_attempts=request.max_repair_attempts,
+        min_review_score=request.min_review_score,
         subject_id=request.subject_id,
         grade_id=request.grade_id,
         created_by=current_user.get("user_id"),
@@ -342,6 +383,10 @@ def generate_questions_admin(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=job.quality_mode,
+        candidate_count=job.candidate_count,
+        max_repair_attempts=job.max_repair_attempts,
+        min_review_score=float(job.min_review_score),
     )
 
     return job
@@ -369,6 +414,10 @@ def create_generation_job(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=request.quality_mode,
+        candidate_count=request.candidate_count,
+        max_repair_attempts=request.max_repair_attempts,
+        min_review_score=request.min_review_score,
         subject_id=request.subject_id,
         grade_id=request.grade_id,
         created_by=current_user.get("user_id"),
@@ -381,6 +430,10 @@ def create_generation_job(
         question_type=request.question_type,
         model=request.model,
         timeout=request.timeout,
+        quality_mode=job.quality_mode,
+        candidate_count=job.candidate_count,
+        max_repair_attempts=job.max_repair_attempts,
+        min_review_score=float(job.min_review_score),
     )
 
     return job
@@ -457,6 +510,10 @@ async def job_progress_stream(
                     "completed_standards": current.completed_standards,
                     "failed_standards": current.failed_standards,
                     "questions_created": current.questions_created,
+                    "quality_mode": current.quality_mode,
+                    "candidate_count": current.candidate_count,
+                    "max_repair_attempts": current.max_repair_attempts,
+                    "min_review_score": float(current.min_review_score or 0.75),
                     "errors": current.errors or [],
                     "started_at": current.started_at.isoformat() if current.started_at else None,
                     "completed_at": current.completed_at.isoformat() if current.completed_at else None,
@@ -466,6 +523,8 @@ async def job_progress_stream(
                             "status": js.status,
                             "questions_created": js.questions_created,
                             "error": js.error,
+                            "avg_quality_score": js.avg_quality_score,
+                            "quality_summary": js.quality_summary,
                         }
                         for js in current.job_standards
                     ] if current.job_standards else [],
@@ -539,6 +598,10 @@ def retry_failed_standards(
             question_type=new_job.question_type or "multiple_choice",
             model=new_job.model,
             timeout=new_job.timeout or 300,
+            quality_mode=new_job.quality_mode,
+            candidate_count=new_job.candidate_count,
+            max_repair_attempts=new_job.max_repair_attempts,
+            min_review_score=float(new_job.min_review_score or 0.75),
         )
 
         return new_job

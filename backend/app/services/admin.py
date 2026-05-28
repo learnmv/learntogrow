@@ -329,9 +329,21 @@ class AdminService:
         suggestions = []
 
         for standard in standards:
-            question_count = self.db.query(Question).filter(
+            question_query = self.db.query(Question).filter(
                 Question.standard_id == standard.id
-            ).count()
+            )
+            question_count = question_query.count()
+            active_question_count = question_query.filter(Question.is_active == True).count()
+            diagram_question_count = question_query.filter(Question.requires_diagram == True).count()
+            difficulty_values = [
+                float(row[0])
+                for row in self.db.query(Question.difficulty)
+                .filter(Question.standard_id == standard.id, Question.difficulty.isnot(None))
+                .all()
+            ]
+            has_easy = any(value <= 0.4 for value in difficulty_values)
+            has_medium = any(0.35 <= value <= 0.7 for value in difficulty_values)
+            has_hard = any(value >= 0.65 for value in difficulty_values)
 
             # Domain accuracy if available
             domain_accuracy = None
@@ -366,6 +378,39 @@ class AdminService:
                 elif domain_accuracy is not None and domain_accuracy < 0.50:
                     reason = f"Students struggling with {standard.code} (accuracy: {domain_accuracy:.0%})"
                     suggested_count = 3
+                elif active_question_count < 3:
+                    reason = f"Only {active_question_count} active question(s) for {standard.code}"
+                elif not (has_easy and has_medium and has_hard):
+                    missing = []
+                    if not has_easy:
+                        missing.append("easy")
+                    if not has_medium:
+                        missing.append("medium")
+                    if not has_hard:
+                        missing.append("hard")
+                    reason = f"Missing {'/'.join(missing)} difficulty coverage for {standard.code}"
+                    suggested_count = min(3, len(missing))
+            elif fill_mode == "difficulty":
+                missing = []
+                if not has_easy:
+                    missing.append("easy")
+                if not has_medium:
+                    missing.append("medium")
+                if not has_hard:
+                    missing.append("hard")
+                if missing:
+                    reason = f"Missing {'/'.join(missing)} difficulty coverage for {standard.code}"
+                    if missing[0] == "easy":
+                        suggested_difficulty = 0.3
+                    elif missing[0] == "hard":
+                        suggested_difficulty = 0.8
+                    else:
+                        suggested_difficulty = 0.55
+                    suggested_count = min(3, len(missing))
+            elif fill_mode == "diagrams":
+                if standard.requires_diagram and diagram_question_count == 0:
+                    reason = f"Needs GeoGebra-backed diagram question for {standard.code}"
+                    suggested_count = 1
 
             if reason:
                 suggestions.append({
@@ -378,11 +423,13 @@ class AdminService:
                     "suggested_count": suggested_count,
                 })
 
-        # Sort: gaps first, then struggling, then low count
+        # Sort: gaps first, then struggling, then missing difficulty/diagram coverage.
         suggestions.sort(key=lambda s: (
             0 if "No questions" in s["reason"] else
             1 if "struggling" in s["reason"] else
-            2
+            2 if "Missing" in s["reason"] else
+            3 if "GeoGebra" in s["reason"] else
+            4
         ))
 
         return {

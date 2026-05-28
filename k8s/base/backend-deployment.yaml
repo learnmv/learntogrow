@@ -59,6 +59,12 @@ spec:
             secretKeyRef:
               name: learntogrow-secrets
               key: ollama-url
+        - name: OLLAMA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: learntogrow-secrets
+              key: ollama-api-key
+              optional: true
         - name: OLLAMA_MODEL
           valueFrom:
             secretKeyRef:
@@ -69,8 +75,20 @@ spec:
             secretKeyRef:
               name: learntogrow-secrets
               key: ollama-timeout
+        - name: OLLAMA_ENABLE_STRUCTURED_OUTPUTS
+          value: "false"
+        - name: OLLAMA_GENERATION_WORKERS
+          value: "3"
+        - name: OLLAMA_QUALITY_MODE
+          value: "reviewed"
+        - name: OLLAMA_CANDIDATE_COUNT
+          value: "1"
+        - name: OLLAMA_MAX_REPAIR_ATTEMPTS
+          value: "0"
+        - name: OLLAMA_MIN_REVIEW_SCORE
+          value: "0.75"
         - name: PARENT_ASSISTANT_MODEL
-          value: "gemma4:e4b"
+          value: "gemma4:31b"
         - name: PARENT_ASSISTANT_TIMEOUT
           value: "120"
         resources:

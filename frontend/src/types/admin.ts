@@ -9,6 +9,10 @@ export interface QuestionGenerateRequest {
   question_type: 'multiple_choice' | 'open_ended';
   model?: string;
   timeout?: number;
+  quality_mode?: 'reviewed' | 'quality';
+  candidate_count?: number;
+  max_repair_attempts?: number;
+  min_review_score?: number;
 }
 
 export interface QuestionGenerateResponse {
@@ -33,6 +37,15 @@ export interface GenerationJobStandard {
   questions_created: number;
   status: JobStandardStatus;
   error?: string | null;
+  avg_quality_score?: number | null;
+  last_review_notes?: string | null;
+  quality_summary?: {
+    planner_runs?: number;
+    candidate_runs?: number;
+    review_runs?: number;
+    repair_runs?: number;
+    best_review_score?: number | null;
+  };
   started_at?: string | null;
   completed_at?: string | null;
 }
@@ -49,6 +62,10 @@ export interface GenerationJob {
   question_type: string;
   model?: string | null;
   timeout: number;
+  quality_mode: 'fast' | 'reviewed' | 'quality';
+  candidate_count: number;
+  max_repair_attempts: number;
+  min_review_score: number;
   errors: string[];
   created_by?: number | null;
   started_at?: string | null;
@@ -63,6 +80,10 @@ export interface CreateGenerationJobRequest {
   question_type?: 'multiple_choice' | 'open_ended';
   model?: string;
   timeout?: number;
+  quality_mode?: 'reviewed' | 'quality';
+  candidate_count?: number;
+  max_repair_attempts?: number;
+  min_review_score?: number;
   subject_id?: number;
   grade_id?: number;
 }
@@ -134,7 +155,7 @@ export interface SmartFillSuggestion {
 export interface SmartFillRequest {
   subject_id: number;
   grade_id?: number;
-  fill_mode: 'gaps' | 'struggling' | 'balanced';
+  fill_mode: 'gaps' | 'struggling' | 'balanced' | 'difficulty' | 'diagrams';
   max_standards: number;
 }
 
@@ -142,4 +163,19 @@ export interface SmartFillResponse {
   suggestions: SmartFillSuggestion[];
   total_suggested: number;
   estimated_generation_time: string;
+}
+
+export interface AdminChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface AdminChatRequest {
+  messages: AdminChatMessage[];
+  temperature?: number;
+}
+
+export interface AdminChatResponse {
+  message: AdminChatMessage;
+  model: string;
 }

@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from typing import Optional
 
 
 class Settings(BaseSettings):
@@ -12,8 +13,15 @@ class Settings(BaseSettings):
 
     # Ollama settings
     OLLAMA_URL: str = "http://localhost:11434"
-    OLLAMA_MODEL: str = "deepseek-r1:1.5b"
+    OLLAMA_API_KEY: Optional[str] = None
+    OLLAMA_MODEL: str = "gemma4:e2b"
     OLLAMA_TIMEOUT: int = 300
+    OLLAMA_ENABLE_STRUCTURED_OUTPUTS: Optional[bool] = None
+    OLLAMA_GENERATION_WORKERS: int = 15
+    OLLAMA_QUALITY_MODE: str = "reviewed"
+    OLLAMA_CANDIDATE_COUNT: int = 1
+    OLLAMA_MAX_REPAIR_ATTEMPTS: int = 0
+    OLLAMA_MIN_REVIEW_SCORE: float = 0.75
     PARENT_ASSISTANT_MODEL: str = "gemma4:e4b"
     PARENT_ASSISTANT_TIMEOUT: int = 120
 
