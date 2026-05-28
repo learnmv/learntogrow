@@ -5,6 +5,7 @@ import httpx
 
 from app.config import get_settings
 from app.schemas.admin import AdminChatMessage
+from app.services.ollama_client import ollama_endpoint, ollama_headers
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ class AdminChatService:
 
     def __init__(self):
         self.settings = get_settings()
-        self.chat_url = f"{self.settings.OLLAMA_URL.rstrip('/')}/api/chat"
+        self.chat_url = ollama_endpoint(self.settings, "chat")
 
     def chat(
         self,
@@ -35,6 +36,7 @@ class AdminChatService:
         response = httpx.post(
             self.chat_url,
             json=payload,
+            headers=ollama_headers(self.settings),
             timeout=self.settings.OLLAMA_TIMEOUT,
         )
         response.raise_for_status()

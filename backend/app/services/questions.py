@@ -11,6 +11,12 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models import AnsweredQuestion, Question, Standard
 from app.prompts import AppletType, format_prompt, get_applet_commands, load_prompt_template
+from app.services.ollama_client import (
+    ollama_endpoint,
+    ollama_headers,
+    ollama_supports_structured_outputs,
+    parse_ollama_json_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +123,7 @@ class QuestionService:
     def __init__(self, db: Session):
         self.db = db
         self.settings = get_settings()
-        self.ollama_url = f"{self.settings.OLLAMA_URL}/api/generate"
+        self.ollama_url = ollama_endpoint(self.settings, "generate")
 
     def get_questions_by_standard(
         self,
@@ -186,13 +192,20 @@ class QuestionService:
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "format": "json",
             "options": {"temperature": temperature},
         }
-        response = httpx.post(self.ollama_url, json=payload, timeout=timeout)
+        if ollama_supports_structured_outputs(self.settings):
+            payload["format"] = "json"
+
+        response = httpx.post(
+            self.ollama_url,
+            json=payload,
+            headers=ollama_headers(self.settings),
+            timeout=timeout,
+        )
         response.raise_for_status()
         generated_text = response.json().get("response", "")
-        return json.loads(generated_text)
+        return parse_ollama_json_response(generated_text)
 
     def _audit(
         self,
