@@ -3,9 +3,11 @@ import logging
 import random
 import re
 import time
+from difflib import SequenceMatcher
 from typing import Any, Callable, Dict, List, Optional
 
 import httpx
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -25,9 +27,18 @@ BASE_TEMPERATURE = 0.7
 TEMPERATURE_INCREMENT = 0.2
 BACKOFF_BASE = 2
 DIFFICULTY_TOLERANCE = 0.35
+DUPLICATE_TEXT_SIMILARITY_THRESHOLD = 0.90
+DUPLICATE_SAME_NUMBERS_SIMILARITY_THRESHOLD = 0.70
+DUPLICATE_SAME_NUMBERS_ANSWER_SIMILARITY_THRESHOLD = 0.70
+DUPLICATE_NUMBER_OVERLAP_THRESHOLD = 0.75
+DUPLICATE_OPTION_OVERLAP_THRESHOLD = 0.75
+QUESTION_BANK_LOCK_NAMESPACE = 900_000_000
 
 _OPTION_LABEL_PATTERN = re.compile(r"^[A-Da-d][\.)\s\-]+\s*")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
+_LATEX_PATTERN = re.compile(r"\$([^$]+)\$")
+_PUNCT_PATTERN = re.compile(r"[^a-z0-9./:\-\s]+")
+_NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?|\\frac\{\d+\}\{\d+\}|\d+/\d+")
 _INCOMPLETE_MARKERS = ("___", "tbd", "todo", "placeholder", "insert ", "missing ")
 
 
@@ -115,6 +126,48 @@ def clean_option_text(option: str) -> str:
     if not option:
         return option
     return _OPTION_LABEL_PATTERN.sub("", str(option).strip())
+
+
+def normalize_question_for_similarity(value: Any) -> str:
+    """Normalize question text while keeping numbers for duplicate detection."""
+    text = str(value or "").lower()
+    text = text.replace("\\dfrac", "\\frac")
+    text = _LATEX_PATTERN.sub(r" \1 ", text)
+    text = text.replace("\\times", " times ")
+    text = text.replace("\\div", " divided by ")
+    text = text.replace("\\left", " ").replace("\\right", " ")
+    text = text.replace("{", "").replace("}", "")
+    text = _PUNCT_PATTERN.sub(" ", text)
+    return _WHITESPACE_PATTERN.sub(" ", text).strip()
+
+
+def extract_numeric_tokens(value: Any) -> set[str]:
+    normalized = normalize_question_for_similarity(value)
+    return set(_NUMBER_PATTERN.findall(normalized))
+
+
+def overlap_ratio(left: set[str], right: set[str]) -> float:
+    if not left or not right:
+        return 0.0
+    return len(left.intersection(right)) / max(1, min(len(left), len(right)))
+
+
+def option_overlap_ratio(candidate_options: Any, existing_options: Any) -> float:
+    if not isinstance(candidate_options, list) or not isinstance(existing_options, list):
+        return 0.0
+    candidate = {normalize_question_for_similarity(option) for option in candidate_options}
+    existing = {normalize_question_for_similarity(option) for option in existing_options}
+    candidate = {option for option in candidate if option}
+    existing = {option for option in existing if option}
+    return overlap_ratio(candidate, existing)
+
+
+def question_similarity(left: Any, right: Any) -> float:
+    return SequenceMatcher(
+        None,
+        normalize_question_for_similarity(left),
+        normalize_question_for_similarity(right),
+    ).ratio()
 
 
 class QuestionService:
@@ -292,6 +345,120 @@ class QuestionService:
 
         return question_data
 
+    def find_similar_existing_question(
+        self,
+        standard_id: int,
+        question_data: dict,
+        exclude_question_id: Optional[int] = None,
+    ) -> Optional[dict]:
+        """Return an existing active question that is too similar to generated data."""
+        candidate_text = question_data.get("question") or question_data.get("question_text") or ""
+        candidate_normalized = normalize_question_for_similarity(candidate_text)
+        if not candidate_normalized:
+            return None
+
+        candidate_numbers = extract_numeric_tokens(candidate_text)
+        candidate_options = question_data.get("options")
+        candidate_answer = normalize_for_match(question_data.get("answer") or question_data.get("correct_answer") or "")
+
+        query = self.db.query(Question).filter(
+            Question.standard_id == standard_id,
+            Question.is_active == True,
+        )
+        if exclude_question_id is not None:
+            query = query.filter(Question.id != exclude_question_id)
+
+        for existing in query.order_by(Question.id.desc()).limit(200).all():
+            existing_normalized = normalize_question_for_similarity(existing.question_text)
+            if not existing_normalized:
+                continue
+            if candidate_normalized == existing_normalized:
+                return {
+                    "question_id": existing.id,
+                    "reason": "exact question text match",
+                    "similarity": 1.0,
+                }
+
+            similarity = question_similarity(candidate_text, existing.question_text)
+            number_overlap = overlap_ratio(candidate_numbers, extract_numeric_tokens(existing.question_text))
+            option_overlap = option_overlap_ratio(candidate_options, existing.options)
+            answer_matches = bool(candidate_answer) and candidate_answer == normalize_for_match(existing.correct_answer)
+
+            if (
+                similarity >= DUPLICATE_TEXT_SIMILARITY_THRESHOLD
+                and (
+                    number_overlap >= DUPLICATE_NUMBER_OVERLAP_THRESHOLD
+                    or option_overlap >= DUPLICATE_OPTION_OVERLAP_THRESHOLD
+                )
+            ):
+                return {
+                    "question_id": existing.id,
+                    "reason": (
+                        f"similarity={similarity:.2f}, "
+                        f"number_overlap={number_overlap:.2f}, "
+                        f"option_overlap={option_overlap:.2f}"
+                    ),
+                    "similarity": round(similarity, 3),
+                    "number_overlap": round(number_overlap, 3),
+                    "option_overlap": round(option_overlap, 3),
+                }
+            if (
+                answer_matches
+                and number_overlap >= DUPLICATE_NUMBER_OVERLAP_THRESHOLD
+                and similarity >= DUPLICATE_SAME_NUMBERS_ANSWER_SIMILARITY_THRESHOLD
+            ):
+                return {
+                    "question_id": existing.id,
+                    "reason": (
+                        f"same answer and numbers with similarity={similarity:.2f}, "
+                        f"number_overlap={number_overlap:.2f}"
+                    ),
+                    "similarity": round(similarity, 3),
+                    "number_overlap": round(number_overlap, 3),
+                    "option_overlap": round(option_overlap, 3),
+                }
+            if (
+                len(candidate_numbers) >= 2
+                and number_overlap >= 1.0
+                and similarity >= DUPLICATE_SAME_NUMBERS_SIMILARITY_THRESHOLD
+            ):
+                return {
+                    "question_id": existing.id,
+                    "reason": (
+                        f"same numeric setup with similarity={similarity:.2f}, "
+                        f"number_overlap={number_overlap:.2f}"
+                    ),
+                    "similarity": round(similarity, 3),
+                    "number_overlap": round(number_overlap, 3),
+                    "option_overlap": round(option_overlap, 3),
+                }
+
+        return None
+
+    def assert_not_duplicate_question(
+        self,
+        standard_id: int,
+        question_data: dict,
+        exclude_question_id: Optional[int] = None,
+    ) -> None:
+        similar = self.find_similar_existing_question(
+            standard_id=standard_id,
+            question_data=question_data,
+            exclude_question_id=exclude_question_id,
+        )
+        if similar:
+            raise ValueError(
+                "Generated question is too similar to existing question "
+                f"{similar['question_id']} ({similar['reason']})"
+            )
+
+    def lock_standard_question_bank(self, standard_id: int) -> None:
+        """Serialize final duplicate-check-and-insert for one standard."""
+        self.db.execute(
+            text("SELECT pg_advisory_xact_lock(:lock_key)"),
+            {"lock_key": QUESTION_BANK_LOCK_NAMESPACE + int(standard_id)},
+        )
+
     def _generate_candidate(
         self,
         standard: Standard,
@@ -311,6 +478,7 @@ class QuestionService:
                 temperature = BASE_TEMPERATURE + (attempt * TEMPERATURE_INCREMENT)
                 raw = self._call_ollama_json(prompt, model, timeout, temperature=temperature)
                 question_data = self._normalize_question_data(raw, standard, difficulty, question_type)
+                self.assert_not_duplicate_question(standard.id, question_data)
                 elapsed = time.perf_counter() - started_at
                 self._audit(
                     audit_callback,
@@ -498,6 +666,7 @@ class QuestionService:
         prompt = load_prompt_template(self.db, "question_repair").format(**context)
         raw = self._call_ollama_json(prompt, model, timeout, temperature=0.25)
         repaired = self._normalize_question_data(raw, standard, difficulty, question_type)
+        self.assert_not_duplicate_question(standard.id, repaired)
 
         self._audit(
             audit_callback,

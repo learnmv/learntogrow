@@ -301,6 +301,8 @@ class QuestionGenerationJobService:
                     f"Generated question missing required fields: "
                     f"question={question_text!r}, answer={answer!r}"
                 )
+            question_service.lock_standard_question_bank(job_std.standard_id)
+            question_service.assert_not_duplicate_question(job_std.standard_id, question_data)
 
             question = Question(
                 standard_id=job_std.standard_id,

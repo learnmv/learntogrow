@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, TIMESTAMP, Boolean, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.database import Base
 
 
@@ -25,8 +28,8 @@ class Question(Base):
     applet_config = Column(JSON)
 
     # Tracking
-    created_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
     generated_by = Column(String(100))
     is_active = Column(Boolean, default=True)
 

@@ -482,6 +482,9 @@ class ParentService:
         standard_id: int,
         question_data: dict,
     ) -> Question:
+        question_service = QuestionService(self.db)
+        question_service.lock_standard_question_bank(standard_id)
+        question_service.assert_not_duplicate_question(standard_id, question_data)
         question = Question(
             standard_id=standard_id,
             question_text=question_data["question"],
