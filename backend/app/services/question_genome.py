@@ -330,6 +330,8 @@ GENOME RULES:
             for part in [
                 question_data.get("question"),
                 json.dumps(question_data.get("stimulus") or {}, sort_keys=True),
+                json.dumps(question_data.get("math_world") or {}, sort_keys=True),
+                json.dumps(question_data.get("diagram_spec") or {}, sort_keys=True),
                 " ".join(question_data.get("options") or []),
                 question_data.get("answer"),
             ]
@@ -385,6 +387,8 @@ GENOME RULES:
                 for part in [
                     question.question_text or "",
                     json.dumps(question.stimulus or {}, sort_keys=True),
+                    json.dumps(question.math_world or {}, sort_keys=True),
+                    json.dumps(question.diagram_spec or {}, sort_keys=True),
                 ]
                 if part
             )

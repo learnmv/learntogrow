@@ -19,6 +19,7 @@ from app.services.ollama_client import (
     ollama_supports_structured_outputs,
     parse_ollama_json_response,
 )
+from app.services.math_scene import MathSceneEngine
 from app.services.question_genome import QuestionGenomePlanner
 
 logger = logging.getLogger(__name__)
@@ -96,6 +97,7 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
         errors.append("Question contains incomplete placeholder text")
 
     errors.extend(validate_stimulus_data(data.get("stimulus")))
+    errors.extend(MathSceneEngine().validate_scene(data))
 
     if data.get("question_type") == "multiple_choice" or "options" in data:
         options = data.get("options", [])
@@ -124,9 +126,10 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
 
     if data.get("requires_diagram"):
         commands = data.get("geogebra_commands")
-        if not commands or not isinstance(commands, list) or len(commands) == 0:
-            errors.append("GeoGebra commands are required for diagram questions but were missing or empty")
-        elif not all(isinstance(cmd, str) and cmd.strip() for cmd in commands):
+        diagram_spec = data.get("diagram_spec")
+        if not diagram_spec and (not commands or not isinstance(commands, list) or len(commands) == 0):
+            errors.append("Diagram questions require either diagram_spec or geogebra_commands")
+        elif commands and not all(isinstance(cmd, str) and cmd.strip() for cmd in commands):
             errors.append("GeoGebra commands must be a list of non-empty strings")
 
     if not data.get("answer"):
@@ -519,6 +522,10 @@ class QuestionService:
             question_data["explanation"] = sanitize_generated_text(question_data["explanation"])
         if "stimulus" in question_data:
             question_data["stimulus"] = sanitize_stimulus(question_data["stimulus"])
+        if question_data.get("math_world") in ("", []):
+            question_data["math_world"] = None
+        if question_data.get("diagram_spec") in ("", []):
+            question_data["diagram_spec"] = None
         question_data["standard_code"] = standard.code
         question_data["difficulty"] = question_data.get("difficulty", difficulty)
         question_data["question_type"] = question_type
@@ -532,8 +539,10 @@ class QuestionService:
 
         validate_question_data(question_data, standard.code, target_difficulty=difficulty)
 
-        if standard.requires_diagram and not question_data.get("geogebra_commands"):
-            raise ValueError(f"Diagram question for {standard.code} is missing required geogebra_commands")
+        if standard.requires_diagram and not (
+            question_data.get("diagram_spec") or question_data.get("geogebra_commands")
+        ):
+            raise ValueError(f"Diagram question for {standard.code} is missing diagram_spec/geogebra_commands")
 
         return question_data
 
@@ -549,6 +558,8 @@ class QuestionService:
             for part in [
                 question_data.get("question") or question_data.get("question_text") or "",
                 stimulus_to_text(question_data.get("stimulus")),
+                MathSceneEngine().scene_to_text(question_data.get("math_world")),
+                MathSceneEngine().scene_to_text(question_data.get("diagram_spec")),
             ]
             if part
         )
@@ -582,6 +593,8 @@ class QuestionService:
                 for part in [
                     existing.question_text,
                     stimulus_to_text(existing.stimulus),
+                    MathSceneEngine().scene_to_text(existing.math_world),
+                    MathSceneEngine().scene_to_text(existing.diagram_spec),
                 ]
                 if part
             )
@@ -684,6 +697,7 @@ class QuestionService:
         model: str,
         timeout: int,
         candidate_index: int = 0,
+        scene_plan: Optional[dict] = None,
         audit_callback: Optional[Callable[..., None]] = None,
     ) -> dict:
         last_error = None
@@ -694,6 +708,7 @@ class QuestionService:
             try:
                 temperature = BASE_TEMPERATURE + (attempt * TEMPERATURE_INCREMENT)
                 raw = self._call_ollama_json(active_prompt, model, timeout, temperature=temperature)
+                raw = MathSceneEngine().apply_to_candidate(raw, scene_plan)
                 question_data = self._normalize_question_data(raw, standard, difficulty, question_type)
                 self.assert_not_duplicate_question(standard.id, question_data)
                 elapsed = time.perf_counter() - started_at
@@ -968,6 +983,7 @@ class QuestionService:
 
         plan: dict = {}
         genome_planner = QuestionGenomePlanner(self.db) if custom_prompt is None else None
+        scene_engine = MathSceneEngine()
         attempts_to_review = actual_candidate_count
         if actual_quality_mode in {"fast", "reviewed"}:
             attempts_to_review = max(1, actual_max_repairs + 1)
@@ -980,6 +996,7 @@ class QuestionService:
         started_at = time.perf_counter()
         for candidate_index in range(attempts_to_review):
             genome = None
+            scene_plan = None
             prompt = base_prompt
             if genome_planner:
                 genome = genome_planner.build_genome(
@@ -1008,6 +1025,32 @@ class QuestionService:
                         f"{genome['misconception_target']}"
                     ),
                 )
+            if custom_prompt is None and scene_engine.supports(standard):
+                scene_plan = scene_engine.build_scene(
+                    standard=standard,
+                    difficulty=actual_difficulty,
+                    attempt_index=candidate_index,
+                )
+                prompt = scene_engine.compose_prompt(prompt, scene_plan)
+                self._audit(
+                    audit_callback,
+                    stage="math_scene",
+                    status="completed",
+                    prompt_name="math_scene_engine",
+                    model=ollama_model,
+                    request_payload={
+                        "standard_id": standard.id,
+                        "difficulty": actual_difficulty,
+                        "candidate_index": candidate_index,
+                    },
+                    response_payload=scene_plan or {},
+                    candidate_index=candidate_index,
+                    notes=(
+                        scene_plan["math_world"]["type"]
+                        if scene_plan and isinstance(scene_plan.get("math_world"), dict)
+                        else None
+                    ),
+                )
             try:
                 candidate = self._generate_candidate(
                     standard=standard,
@@ -1017,6 +1060,7 @@ class QuestionService:
                     model=ollama_model,
                     timeout=actual_timeout,
                     candidate_index=candidate_index,
+                    scene_plan=scene_plan,
                     audit_callback=audit_callback,
                 )
                 review = self._review_question(
@@ -1037,6 +1081,7 @@ class QuestionService:
                         "review": review,
                         "score": float(review.get("score", 0) or 0),
                         "genome": genome,
+                        "scene": scene_plan,
                     }
                 )
                 if review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:

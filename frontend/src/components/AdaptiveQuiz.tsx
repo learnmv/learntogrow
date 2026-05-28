@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { ArrowRight, RotateCcw, CheckCircle, XCircle, RefreshCw, Target } from 'lucide-react'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, getFriendlySkillLevel, renderMathToHtml } from '../lib/utils'
+import { DiagramRenderer } from './DiagramRenderer'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import { QuestionStimulus } from './QuestionStimulus'
 import { fetchAdaptiveQuestion, recordAdaptiveAnswer } from '../services/adaptive'
@@ -207,7 +208,9 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
             </div>
           )}
 
-          {currentQuestion?.applet_type && (
+          {currentQuestion?.diagram_spec ? (
+            <DiagramRenderer diagram={currentQuestion.diagram_spec} className="mb-6" />
+          ) : currentQuestion?.applet_type ? (
             <div className="mb-6 flex justify-center">
               <GeoGebraApplet
                 appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
@@ -216,7 +219,7 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
                 width={600}
               />
             </div>
-          )}
+          ) : null}
 
           <AnimatePresence mode="wait">
             {loading ? (

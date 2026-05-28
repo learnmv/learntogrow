@@ -20,6 +20,8 @@ class Question(Base):
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text)
     stimulus = Column(JSON)
+    math_world = Column(JSON)
+    diagram_spec = Column(JSON)
 
     # Metadata
     difficulty = Column(Numeric(3, 2))

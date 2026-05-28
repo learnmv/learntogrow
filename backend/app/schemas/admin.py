@@ -41,6 +41,8 @@ class QuestionEditRequest(BaseModel):
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
     stimulus: Optional[dict] = None
+    math_world: Optional[dict] = None
+    diagram_spec: Optional[dict] = None
     difficulty: Optional[float] = Field(None, ge=0, le=1)
     is_active: Optional[bool] = None
 

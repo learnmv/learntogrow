@@ -6,6 +6,7 @@ import { fetchQuestionsByStandard } from '../services/questions'
 import { recordAnswer } from '../services/student'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
+import { DiagramRenderer } from './DiagramRenderer'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import { QuestionStimulus } from './QuestionStimulus'
 import type { Standard } from '../types/standards'
@@ -357,7 +358,15 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
               Never unmounts; only receives new commands when question changes.
               Fades out during loading so the old diagram doesn't linger
               while the next question is being fetched. */}
-          {currentQuestion?.applet_type && (
+          {currentQuestion?.diagram_spec ? (
+            <DiagramRenderer
+              diagram={currentQuestion.diagram_spec}
+              className={cn(
+                'mb-6 transition-opacity duration-300',
+                generatingQuestion && 'opacity-0 pointer-events-none'
+              )}
+            />
+          ) : currentQuestion?.applet_type ? (
             <div
               className={cn(
                 'mb-6 flex justify-center transition-opacity duration-300',
@@ -371,7 +380,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
                 width={600}
               />
             </div>
-          )}
+          ) : null}
 
           {/* Inner content — ANIMATED via AnimatePresence */}
           <AnimatePresence mode="wait">

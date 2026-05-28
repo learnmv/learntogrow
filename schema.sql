@@ -72,6 +72,8 @@ CREATE TABLE questions (
     correct_answer TEXT NOT NULL,
     explanation TEXT,
     stimulus JSONB,
+    math_world JSONB,
+    diagram_spec JSONB,
 
     -- Metadata
     difficulty DECIMAL(3,2) CHECK (difficulty BETWEEN 0.00 AND 1.00),
