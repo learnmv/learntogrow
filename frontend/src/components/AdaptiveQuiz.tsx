@@ -4,6 +4,7 @@ import { ArrowRight, RotateCcw, CheckCircle, XCircle, RefreshCw, Target } from '
 import { useAuth } from '../contexts/AuthContext'
 import { cn, getFriendlySkillLevel, renderMathToHtml } from '../lib/utils'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
+import { QuestionStimulus } from './QuestionStimulus'
 import { fetchAdaptiveQuestion, recordAdaptiveAnswer } from '../services/adaptive'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -239,9 +240,11 @@ export function AdaptiveQuiz({ domainId, domainName, onExit }: AdaptiveQuizProps
                 exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
-                <h2
-                  className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
+                <QuestionStimulus
+                  questionText={currentQuestion.question_text}
+                  stimulus={currentQuestion.stimulus}
+                  questionClassName="font-display text-2xl font-semibold text-text leading-relaxed"
+                  className="mb-6"
                 />
 
                 <div className="space-y-3">

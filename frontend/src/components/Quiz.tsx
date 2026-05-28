@@ -7,6 +7,7 @@ import { recordAnswer } from '../services/student'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
 import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
+import { QuestionStimulus } from './QuestionStimulus'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
 
@@ -396,9 +397,11 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
                 transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
               >
                 {/* Question Text */}
-                <h2
-                  className="font-display text-2xl font-semibold text-text mb-6 leading-relaxed"
-                  dangerouslySetInnerHTML={{ __html: renderMathToHtml(currentQuestion.question_text) }}
+                <QuestionStimulus
+                  questionText={currentQuestion.question_text}
+                  stimulus={currentQuestion.stimulus}
+                  questionClassName="font-display text-2xl font-semibold text-text leading-relaxed"
+                  className="mb-6"
                 />
 
                 {/* Options */}

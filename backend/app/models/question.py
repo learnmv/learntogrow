@@ -19,6 +19,7 @@ class Question(Base):
     options = Column(JSON)
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text)
+    stimulus = Column(JSON)
 
     # Metadata
     difficulty = Column(Numeric(3, 2))

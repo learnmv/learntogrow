@@ -492,6 +492,7 @@ class ParentService:
             options=question_data.get("options"),
             correct_answer=question_data["answer"],
             explanation=question_data.get("explanation"),
+            stimulus=question_data.get("stimulus"),
             difficulty=question_data.get("difficulty"),
             requires_diagram=question_data.get("requires_diagram", False),
             applet_type=question_data.get("applet_type"),

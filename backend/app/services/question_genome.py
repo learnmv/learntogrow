@@ -329,6 +329,7 @@ GENOME RULES:
             str(part or "")
             for part in [
                 question_data.get("question"),
+                json.dumps(question_data.get("stimulus") or {}, sort_keys=True),
                 " ".join(question_data.get("options") or []),
                 question_data.get("answer"),
             ]
@@ -379,7 +380,14 @@ GENOME RULES:
         result = []
         for question in questions:
             signature = question.generation_signature if isinstance(question.generation_signature, dict) else {}
-            text = question.question_text or ""
+            text = " ".join(
+                part
+                for part in [
+                    question.question_text or "",
+                    json.dumps(question.stimulus or {}, sort_keys=True),
+                ]
+                if part
+            )
             result.append(
                 ExistingQuestionSummary(
                     question_id=question.id,

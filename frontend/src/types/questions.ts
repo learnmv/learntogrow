@@ -2,10 +2,20 @@ export type QuestionType = 'multiple_choice' | 'open_ended'
 
 export type AppletType = 'graphing' | 'geometry' | '3d' | 'classic' | 'cas' | 'scientific'
 
+export interface TableStimulus {
+  type: 'table'
+  title?: string | null
+  columns: string[]
+  rows: string[][]
+}
+
+export type QuestionStimulus = TableStimulus | Record<string, unknown>
+
 interface QuestionContent {
   question_type: QuestionType
   options: string[] | null
   explanation: string | null
+  stimulus: QuestionStimulus | null
   requires_diagram: boolean
   applet_type: AppletType | null
   geogebra_commands: string[] | null

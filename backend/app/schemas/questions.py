@@ -42,6 +42,10 @@ class QuestionContent(BaseModel):
         None,
         description="Explanation of the answer"
     )
+    stimulus: Optional[dict[str, Any]] = Field(
+        None,
+        description="Optional structured stimulus such as a table"
+    )
     question_type: str = Field(..., description="Type of question")
     requires_diagram: bool = Field(
         False,
@@ -94,5 +98,6 @@ class QuestionEditRequest(BaseModel):
     options: Optional[List[str]] = Field(None, description="Multiple choice options")
     correct_answer: Optional[str] = Field(None, description="The correct answer")
     explanation: Optional[str] = Field(None, description="Explanation of the answer")
+    stimulus: Optional[dict[str, Any]] = Field(None, description="Optional structured stimulus")
     difficulty: Optional[float] = Field(None, ge=0, le=1, description="Difficulty level (0-1)")
     is_active: Optional[bool] = Field(None, description="Whether question is active")

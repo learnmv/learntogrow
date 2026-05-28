@@ -42,6 +42,7 @@ _LATEX_PATTERN = re.compile(r"\$([^$]+)\$")
 _PUNCT_PATTERN = re.compile(r"[^a-z0-9./:\-\s]+")
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?|\\frac\{\d+\}\{\d+\}|\d+/\d+")
 _UNSAFE_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+_MARKDOWN_TABLE_SEPARATOR_PATTERN = re.compile(r"^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$")
 _INCOMPLETE_MARKERS = ("___", "tbd", "todo", "placeholder", "insert ", "missing ")
 _CONTROL_LATEX_REPAIRS = {
     "\x0crac": r"\frac",
@@ -87,10 +88,14 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
     question_lower = data.get("question", "").lower()
     if has_unsafe_control_chars(data.get("question")):
         errors.append("Question contains unsafe control characters")
+    if has_markdown_table(data.get("question")):
+        errors.append("Question text contains a raw markdown table; use structured stimulus.table instead")
     if "when and" in question_lower and "=" not in question_lower:
         errors.append("Question has missing variable values (e.g., 'when and')")
     if any(marker in question_lower for marker in _INCOMPLETE_MARKERS):
         errors.append("Question contains incomplete placeholder text")
+
+    errors.extend(validate_stimulus_data(data.get("stimulus")))
 
     if data.get("question_type") == "multiple_choice" or "options" in data:
         options = data.get("options", [])
@@ -172,6 +177,138 @@ def sanitize_generated_text(value: Any) -> str:
 
 def has_unsafe_control_chars(value: Any) -> bool:
     return bool(_UNSAFE_CONTROL_PATTERN.search(str(value or "")))
+
+
+def _markdown_table_cells(line: str) -> list[str]:
+    return [cell.strip() for cell in line.strip().strip("|").split("|")]
+
+
+def has_markdown_table(value: Any) -> bool:
+    lines = str(value or "").splitlines()
+    return any(_MARKDOWN_TABLE_SEPARATOR_PATTERN.match(line) for line in lines)
+
+
+def extract_markdown_table_stimulus(question_text: Any) -> tuple[str, Optional[dict]]:
+    """Extract one markdown table from question text into structured stimulus data."""
+    lines = sanitize_generated_text(question_text).splitlines()
+    for index in range(len(lines) - 1):
+        header = lines[index]
+        separator = lines[index + 1]
+        if "|" not in header or not _MARKDOWN_TABLE_SEPARATOR_PATTERN.match(separator):
+            continue
+
+        columns = _markdown_table_cells(header)
+        if len(columns) < 2 or any(not column for column in columns):
+            continue
+
+        rows: list[list[str]] = []
+        end = index + 2
+        while end < len(lines) and "|" in lines[end].strip():
+            row = _markdown_table_cells(lines[end])
+            if len(row) != len(columns):
+                break
+            rows.append(row)
+            end += 1
+
+        if not rows:
+            continue
+
+        kept_lines = lines[:index] + lines[end:]
+        cleaned_question = "\n".join(line for line in kept_lines).strip()
+        cleaned_question = re.sub(r"\n{3,}", "\n\n", cleaned_question)
+        stimulus = {
+            "type": "table",
+            "columns": columns,
+            "rows": rows,
+        }
+        return cleaned_question, stimulus
+
+    return sanitize_generated_text(question_text), None
+
+
+def sanitize_stimulus(value: Any) -> Optional[dict]:
+    if value in (None, "", []):
+        return None
+    if not isinstance(value, dict):
+        return {"type": "text", "content": sanitize_generated_text(value)}
+
+    stimulus = dict(value)
+    stimulus_type = sanitize_generated_text(stimulus.get("type") or "").strip().lower()
+    stimulus["type"] = stimulus_type
+
+    if stimulus_type == "table":
+        columns = stimulus.get("columns") or []
+        rows = stimulus.get("rows") or []
+        stimulus["columns"] = [sanitize_generated_text(column).strip() for column in columns]
+        stimulus["rows"] = [
+            [sanitize_generated_text(cell).strip() for cell in row]
+            for row in rows
+            if isinstance(row, list)
+        ]
+        if stimulus.get("title"):
+            stimulus["title"] = sanitize_generated_text(stimulus["title"]).strip()
+        return stimulus
+
+    return {
+        key: sanitize_generated_text(item).strip() if isinstance(item, str) else item
+        for key, item in stimulus.items()
+    }
+
+
+def validate_stimulus_data(stimulus: Any) -> list[str]:
+    if stimulus in (None, "", []):
+        return []
+    if not isinstance(stimulus, dict):
+        return ["Stimulus must be an object"]
+
+    stimulus_type = stimulus.get("type")
+    if stimulus_type != "table":
+        return [f"Unsupported stimulus type: {stimulus_type!r}"]
+
+    columns = stimulus.get("columns")
+    rows = stimulus.get("rows")
+    errors: list[str] = []
+    if not isinstance(columns, list) or not (2 <= len(columns) <= 5):
+        errors.append("Table stimulus must have 2 to 5 columns")
+    elif any(not isinstance(column, str) or not column.strip() for column in columns):
+        errors.append("Table stimulus columns must be non-empty strings")
+
+    if not isinstance(rows, list) or not (1 <= len(rows) <= 8):
+        errors.append("Table stimulus must have 1 to 8 rows")
+    elif isinstance(columns, list):
+        for row_index, row in enumerate(rows):
+            if not isinstance(row, list) or len(row) != len(columns):
+                errors.append(f"Table row {row_index + 1} must match the column count")
+                continue
+            if any(not isinstance(cell, str) or not cell.strip() for cell in row):
+                errors.append(f"Table row {row_index + 1} has an empty cell")
+
+    text_parts = []
+    if isinstance(columns, list):
+        text_parts.extend(columns)
+    if isinstance(rows, list):
+        for row in rows:
+            if isinstance(row, list):
+                text_parts.extend(row)
+    if any(has_unsafe_control_chars(part) for part in text_parts):
+        errors.append("Table stimulus contains unsafe control characters")
+
+    return errors
+
+
+def stimulus_to_text(stimulus: Any) -> str:
+    if not isinstance(stimulus, dict):
+        return ""
+    if stimulus.get("type") == "table":
+        columns = stimulus.get("columns") or []
+        rows = stimulus.get("rows") or []
+        row_text = [
+            " ".join(str(cell or "") for cell in row)
+            for row in rows
+            if isinstance(row, list)
+        ]
+        return " ".join([*(str(column or "") for column in columns), *row_text])
+    return " ".join(str(value or "") for value in stimulus.values())
 
 
 def normalize_question_for_similarity(value: Any) -> str:
@@ -374,9 +511,14 @@ class QuestionService:
     ) -> dict:
         question_data = dict(data)
         if "question" in question_data:
-            question_data["question"] = sanitize_generated_text(question_data["question"])
+            cleaned_question, extracted_stimulus = extract_markdown_table_stimulus(question_data["question"])
+            question_data["question"] = cleaned_question
+            if extracted_stimulus and not question_data.get("stimulus"):
+                question_data["stimulus"] = extracted_stimulus
         if "explanation" in question_data:
             question_data["explanation"] = sanitize_generated_text(question_data["explanation"])
+        if "stimulus" in question_data:
+            question_data["stimulus"] = sanitize_stimulus(question_data["stimulus"])
         question_data["standard_code"] = standard.code
         question_data["difficulty"] = question_data.get("difficulty", difficulty)
         question_data["question_type"] = question_type
@@ -402,7 +544,14 @@ class QuestionService:
         exclude_question_id: Optional[int] = None,
     ) -> Optional[dict]:
         """Return an existing active question that is too similar to generated data."""
-        candidate_text = question_data.get("question") or question_data.get("question_text") or ""
+        candidate_text = " ".join(
+            part
+            for part in [
+                question_data.get("question") or question_data.get("question_text") or "",
+                stimulus_to_text(question_data.get("stimulus")),
+            ]
+            if part
+        )
         candidate_normalized = normalize_question_for_similarity(candidate_text)
         if not candidate_normalized:
             return None
@@ -428,7 +577,15 @@ class QuestionService:
                 }
 
         for existing in query.order_by(Question.id.desc()).limit(200).all():
-            existing_normalized = normalize_question_for_similarity(existing.question_text)
+            existing_text = " ".join(
+                part
+                for part in [
+                    existing.question_text,
+                    stimulus_to_text(existing.stimulus),
+                ]
+                if part
+            )
+            existing_normalized = normalize_question_for_similarity(existing_text)
             if not existing_normalized:
                 continue
             if candidate_normalized == existing_normalized:
@@ -438,8 +595,8 @@ class QuestionService:
                     "similarity": 1.0,
                 }
 
-            similarity = question_similarity(candidate_text, existing.question_text)
-            number_overlap = overlap_ratio(candidate_numbers, extract_numeric_tokens(existing.question_text))
+            similarity = question_similarity(candidate_text, existing_text)
+            number_overlap = overlap_ratio(candidate_numbers, extract_numeric_tokens(existing_text))
             option_overlap = option_overlap_ratio(candidate_options, existing.options)
             answer_matches = bool(candidate_answer) and candidate_answer == normalize_for_match(existing.correct_answer)
 
