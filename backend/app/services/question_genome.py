@@ -16,6 +16,7 @@ from typing import Any, Iterable, Optional
 from sqlalchemy.orm import Session
 
 from app.models import Question, Standard
+from app.services.question_intent import intent_profile_for_standard
 
 
 DOMAIN_PROFILES = {
@@ -256,6 +257,7 @@ class QuestionGenomePlanner:
     ) -> dict[str, Any]:
         existing = self._existing_questions(standard.id)
         profile = self._profile_for_standard(standard)
+        intent_profile = intent_profile_for_standard(standard)
         domain_code = self._domain_code(standard)
         used = self._usage(existing)
         seed = self._seed(standard.id, difficulty, question_type, attempt_index, len(existing))
@@ -302,6 +304,8 @@ class QuestionGenomePlanner:
             "avoid_question_summaries": avoid["summaries"],
             "rejection_notes": rejection_notes or [],
         }
+        if intent_profile:
+            genome["standard_intent_contract"] = intent_profile.as_dict()
         genome["genome_hash"] = self.signature_hash(genome)
         return genome
 
@@ -321,6 +325,7 @@ GENOME RULES:
 - For challenge/expert difficulty, increase reasoning depth through meaningful steps, not confusing wording.
 - For multiple choice, make distractors target the misconception_target and other common errors.
 - Keep the question grade-appropriate and directly aligned to the standard.
+- If standard_intent_contract is present, obey it over the broader domain profile.
 - Return only the raw JSON object requested above.
 """.strip()
 
@@ -404,7 +409,109 @@ GENOME RULES:
         return result
 
     def _profile_for_standard(self, standard: Standard) -> dict[str, list[str]]:
+        intent_profile = intent_profile_for_standard(standard)
+        if intent_profile:
+            allowed = list(intent_profile.allowed_tasks)
+            forbidden = list(intent_profile.forbidden_tasks)
+            return {
+                "skills": allowed,
+                "contexts": self._intent_contexts(standard),
+                "number_patterns": self._intent_number_patterns(standard),
+                "misconceptions": [
+                    f"confuse this with: {item}"
+                    for item in forbidden[:5]
+                ] or DOMAIN_PROFILES["DEFAULT"]["misconceptions"],
+            }
         return DOMAIN_PROFILES.get(self._domain_code(standard), DOMAIN_PROFILES["DEFAULT"])
+
+    def _intent_contexts(self, standard: Standard) -> list[str]:
+        code = str(standard.code or "").strip()
+        contexts_by_code = {
+            "6.RP.1": [
+                "class survey counts",
+                "sports team roster counts",
+                "color tile collections",
+                "fruit basket counts",
+            ],
+            "6.RP.2": [
+                "grocery unit price",
+                "typing rate",
+                "walking pace",
+                "paint coverage",
+            ],
+            "6.NS.4": [
+                "synchronized events",
+                "package grouping",
+                "common schedules",
+                "distributive property grouping",
+            ],
+            "7.RP.1": [
+                "fractional distance and time",
+                "fractional recipe rate",
+                "area covered per fractional hour",
+                "mixed-unit material use",
+            ],
+            "7.RP.2": [
+                "proportional table",
+                "constant of proportionality graph",
+                "equation from relationship",
+                "scale relationship",
+            ],
+            "7.NS.1": [
+                "elevation changes",
+                "temperature changes",
+                "signed account balance",
+                "number line movement",
+            ],
+            "7.G.5": [
+                "intersecting lines",
+                "straight-line angle pair",
+                "complementary angle pair",
+                "adjacent angles in a diagram",
+            ],
+        }
+        return contexts_by_code.get(code, DOMAIN_PROFILES["DEFAULT"]["contexts"])
+
+    def _intent_number_patterns(self, standard: Standard) -> list[str]:
+        code = str(standard.code or "").strip()
+        patterns_by_code = {
+            "6.RP.1": [
+                "two whole-number counts for ratio language",
+                "part-to-part whole-number ratio",
+                "part-to-whole whole-number ratio",
+            ],
+            "6.RP.2": [
+                "whole-number quantity divided by whole-number quantity",
+                "decimal quantity divided by whole-number quantity",
+                "fractional quantity divided by whole-number quantity",
+            ],
+            "6.NS.4": [
+                "two whole numbers with nontrivial GCF",
+                "two whole numbers with nontrivial LCM",
+                "two addends sharing a common factor",
+            ],
+            "7.RP.1": [
+                "proper fraction divided by proper fraction",
+                "mixed number divided by fraction",
+                "fractional quantity divided by decimal quantity",
+            ],
+            "7.RP.2": [
+                "table values with constant ratio y over x",
+                "equation y = kx with rational k",
+                "graph points through origin with constant ratio",
+            ],
+            "7.NS.1": [
+                "negative decimal plus positive decimal",
+                "positive fraction minus negative fraction",
+                "distance between two rational numbers",
+            ],
+            "7.G.5": [
+                "supplementary angles summing to 180",
+                "complementary angles summing to 90",
+                "vertical angles represented by simple expressions",
+            ],
+        }
+        return patterns_by_code.get(code, DOMAIN_PROFILES["DEFAULT"]["number_patterns"])
 
     def _domain_code(self, standard: Standard) -> str:
         if standard.domain and standard.domain.code:
