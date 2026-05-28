@@ -358,15 +358,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
               Never unmounts; only receives new commands when question changes.
               Fades out during loading so the old diagram doesn't linger
               while the next question is being fetched. */}
-          {currentQuestion?.diagram_spec ? (
-            <DiagramRenderer
-              diagram={currentQuestion.diagram_spec}
-              className={cn(
-                'mb-6 transition-opacity duration-300',
-                generatingQuestion && 'opacity-0 pointer-events-none'
-              )}
-            />
-          ) : currentQuestion?.applet_type ? (
+          {currentQuestion?.applet_type && currentQuestion.geogebra_commands?.length ? (
             <div
               className={cn(
                 'mb-6 flex justify-center transition-opacity duration-300',
@@ -380,6 +372,14 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
                 width={600}
               />
             </div>
+          ) : currentQuestion?.diagram_spec ? (
+            <DiagramRenderer
+              diagram={currentQuestion.diagram_spec}
+              className={cn(
+                'mb-6 transition-opacity duration-300',
+                generatingQuestion && 'opacity-0 pointer-events-none'
+              )}
+            />
           ) : null}
 
           {/* Inner content — ANIMATED via AnimatePresence */}

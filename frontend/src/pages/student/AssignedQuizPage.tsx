@@ -215,9 +215,7 @@ export function AssignedQuizPage() {
           />
         </div>
 
-        {currentQuestion?.diagram_spec ? (
-          <DiagramRenderer diagram={currentQuestion.diagram_spec} className="mb-6" />
-        ) : currentQuestion?.applet_type ? (
+        {currentQuestion?.applet_type && currentQuestion.geogebra_commands?.length ? (
           <div className="mb-6 flex justify-center">
             <GeoGebraApplet
               appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
@@ -226,6 +224,8 @@ export function AssignedQuizPage() {
               width={600}
             />
           </div>
+        ) : currentQuestion?.diagram_spec ? (
+          <DiagramRenderer diagram={currentQuestion.diagram_spec} className="mb-6" />
         ) : null}
 
         <div className="space-y-3">
