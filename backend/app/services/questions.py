@@ -41,7 +41,31 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 _LATEX_PATTERN = re.compile(r"\$([^$]+)\$")
 _PUNCT_PATTERN = re.compile(r"[^a-z0-9./:\-\s]+")
 _NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?|\\frac\{\d+\}\{\d+\}|\d+/\d+")
+_UNSAFE_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
 _INCOMPLETE_MARKERS = ("___", "tbd", "todo", "placeholder", "insert ", "missing ")
+_CONTROL_LATEX_REPAIRS = {
+    "\x0crac": r"\frac",
+    "\x0corall": r"\forall",
+    "\x08ar": r"\bar",
+    "\x08ecause": r"\because",
+    "\x08oxed": r"\boxed",
+    "\x08inom": r"\binom",
+    "\x08eta": r"\beta",
+    "\nabla": r"\nabla",
+    "\neq": r"\neq",
+    "\not": r"\not",
+    "\range": r"\range",
+    "\rightarrow": r"\rightarrow",
+    "\right": r"\right",
+    "\x07lpha": r"\alpha",
+    "\x07ngle": r"\angle",
+    "\x09an": r"\tan",
+    "\x09ext": r"\text",
+    "\x09frac": r"\tfrac",
+    "\x09heta": r"\theta",
+    "\x09herefore": r"\therefore",
+    "\x09imes": r"\times",
+}
 
 
 def normalize_for_match(value: Any) -> str:
@@ -61,6 +85,8 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
         errors.append(f"Question appears incomplete: '{data['question']}'")
 
     question_lower = data.get("question", "").lower()
+    if has_unsafe_control_chars(data.get("question")):
+        errors.append("Question contains unsafe control characters")
     if "when and" in question_lower and "=" not in question_lower:
         errors.append("Question has missing variable values (e.g., 'when and')")
     if any(marker in question_lower for marker in _INCOMPLETE_MARKERS):
@@ -74,6 +100,8 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
             errors.append(f"Expected 4 options, got {len(options)}")
         else:
             for i, opt in enumerate(options):
+                if has_unsafe_control_chars(opt):
+                    errors.append(f"Option {chr(65 + i)} contains unsafe control characters")
                 if not opt or len(str(opt).strip()) < 1:
                     errors.append(f"Option {chr(65 + i)} is empty")
                 elif str(opt).strip() in ["A", "B", "C", "D"]:
@@ -98,10 +126,14 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
 
     if not data.get("answer"):
         errors.append("Answer is missing")
+    elif has_unsafe_control_chars(data.get("answer")):
+        errors.append("Answer contains unsafe control characters")
 
     explanation = data.get("explanation")
     if not explanation or len(str(explanation).strip()) < 10:
         errors.append("Explanation is missing or too short")
+    elif has_unsafe_control_chars(explanation):
+        errors.append("Explanation contains unsafe control characters")
 
     difficulty = data.get("difficulty")
     try:
@@ -127,7 +159,19 @@ def clean_option_text(option: str) -> str:
     """Clean option text by removing duplicate letter labels."""
     if not option:
         return option
-    return _OPTION_LABEL_PATTERN.sub("", str(option).strip())
+    return _OPTION_LABEL_PATTERN.sub("", sanitize_generated_text(str(option)).strip())
+
+
+def sanitize_generated_text(value: Any) -> str:
+    """Repair common JSON escape/control-character damage in generated math text."""
+    text = str(value or "")
+    for broken, repaired in _CONTROL_LATEX_REPAIRS.items():
+        text = text.replace(broken, repaired)
+    return text
+
+
+def has_unsafe_control_chars(value: Any) -> bool:
+    return bool(_UNSAFE_CONTROL_PATTERN.search(str(value or "")))
 
 
 def normalize_question_for_similarity(value: Any) -> str:
@@ -329,6 +373,10 @@ class QuestionService:
         question_type: str,
     ) -> dict:
         question_data = dict(data)
+        if "question" in question_data:
+            question_data["question"] = sanitize_generated_text(question_data["question"])
+        if "explanation" in question_data:
+            question_data["explanation"] = sanitize_generated_text(question_data["explanation"])
         question_data["standard_code"] = standard.code
         question_data["difficulty"] = question_data.get("difficulty", difficulty)
         question_data["question_type"] = question_type
