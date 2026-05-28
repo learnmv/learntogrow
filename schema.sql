@@ -71,6 +71,7 @@ CREATE TABLE questions (
     options JSONB,
     correct_answer TEXT NOT NULL,
     explanation TEXT,
+    stimulus JSONB,
 
     -- Metadata
     difficulty DECIMAL(3,2) CHECK (difficulty BETWEEN 0.00 AND 1.00),
@@ -78,6 +79,10 @@ CREATE TABLE questions (
     applet_type VARCHAR(20),
     geogebra_commands JSONB,
     applet_config JSONB,
+    generation_signature JSONB DEFAULT '{}'::jsonb,
+    math_spec JSONB DEFAULT '{}'::jsonb,
+    semantic_hash VARCHAR(128),
+    quality_score DECIMAL(4,3),
 
     -- Tracking
     created_at TIMESTAMP DEFAULT NOW(),

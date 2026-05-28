@@ -1,5 +1,8 @@
+from datetime import datetime
+
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, Numeric, TIMESTAMP, Boolean, JSON
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 from app.database import Base
 
 
@@ -16,6 +19,7 @@ class Question(Base):
     options = Column(JSON)
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text)
+    stimulus = Column(JSON)
 
     # Metadata
     difficulty = Column(Numeric(3, 2))
@@ -23,10 +27,14 @@ class Question(Base):
     applet_type = Column(String(20))
     geogebra_commands = Column(JSON)
     applet_config = Column(JSON)
+    generation_signature = Column(JSON)
+    math_spec = Column(JSON)
+    semantic_hash = Column(String(128))
+    quality_score = Column(Numeric(4, 3))
 
     # Tracking
-    created_at = Column(TIMESTAMP)
-    updated_at = Column(TIMESTAMP)
+    created_at = Column(TIMESTAMP, default=datetime.utcnow, server_default=func.now())
+    updated_at = Column(TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow, server_default=func.now())
     generated_by = Column(String(100))
     is_active = Column(Boolean, default=True)
 

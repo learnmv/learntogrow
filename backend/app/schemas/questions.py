@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Any, Optional, List
 from datetime import datetime
 
 from app.prompts import AppletType
@@ -42,6 +42,10 @@ class QuestionContent(BaseModel):
         None,
         description="Explanation of the answer"
     )
+    stimulus: Optional[dict[str, Any]] = Field(
+        None,
+        description="Optional structured stimulus such as a table"
+    )
     question_type: str = Field(..., description="Type of question")
     requires_diagram: bool = Field(
         False,
@@ -79,6 +83,10 @@ class QuestionDBResponse(QuestionContent):
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     generated_by: Optional[str] = Field(None, description="Model/system that generated the question")
+    generation_signature: Optional[dict[str, Any]] = Field(None, description="Generation genome metadata")
+    math_spec: Optional[dict[str, Any]] = Field(None, description="Math specification metadata")
+    semantic_hash: Optional[str] = Field(None, description="Semantic uniqueness hash")
+    quality_score: Optional[float] = Field(None, description="Generation quality score")
 
     class Config:
         from_attributes = True
@@ -90,5 +98,6 @@ class QuestionEditRequest(BaseModel):
     options: Optional[List[str]] = Field(None, description="Multiple choice options")
     correct_answer: Optional[str] = Field(None, description="The correct answer")
     explanation: Optional[str] = Field(None, description="Explanation of the answer")
+    stimulus: Optional[dict[str, Any]] = Field(None, description="Optional structured stimulus")
     difficulty: Optional[float] = Field(None, ge=0, le=1, description="Difficulty level (0-1)")
     is_active: Optional[bool] = Field(None, description="Whether question is active")

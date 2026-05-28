@@ -482,6 +482,9 @@ class ParentService:
         standard_id: int,
         question_data: dict,
     ) -> Question:
+        question_service = QuestionService(self.db)
+        question_service.lock_standard_question_bank(standard_id)
+        question_service.assert_not_duplicate_question(standard_id, question_data)
         question = Question(
             standard_id=standard_id,
             question_text=question_data["question"],
@@ -489,10 +492,15 @@ class ParentService:
             options=question_data.get("options"),
             correct_answer=question_data["answer"],
             explanation=question_data.get("explanation"),
+            stimulus=question_data.get("stimulus"),
             difficulty=question_data.get("difficulty"),
             requires_diagram=question_data.get("requires_diagram", False),
             applet_type=question_data.get("applet_type"),
             geogebra_commands=question_data.get("geogebra_commands"),
+            generation_signature=question_data.get("generation_signature"),
+            math_spec=question_data.get("math_spec"),
+            semantic_hash=question_data.get("semantic_hash"),
+            quality_score=question_data.get("quality_score"),
             generated_by="parent_assistant",
             is_active=True,
         )
@@ -556,7 +564,7 @@ class ParentService:
         return data
 
     def handle_assistant_chat(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
-        """Handle parent assistant requests through a controlled tool-calling loop."""
+        """Handle parent assistant requests with natural conversation plus controlled tools."""
         message = request.message.strip()
         thread = self._get_or_create_assistant_thread(parent_id, request)
         parent_message = self._add_assistant_message(
@@ -564,35 +572,67 @@ class ParentService:
             role="parent",
             content=message,
         )
-        if self._is_assistant_greeting(message):
-            answer = self._assistant_greeting_response(parent_id)
-            self._add_assistant_message(
-                thread_id=thread.id,
-                role="assistant",
-                content=answer,
-                intent="conversation",
-            )
-            return {
-                "intent": "conversation",
-                "answer": answer,
-                "thread_id": thread.id,
-                "tool_name": None,
-                "requires_student": False,
-                "requires_subject": False,
-                "suggestions": ["Show weak topics", "Show strong topics", "Show syllabus"],
-                "data": {},
-            }
 
+        memory = self._assistant_memory(thread.id)
+        memory = self._apply_selected_context_to_memory(parent_id, request, memory)
         context = self._assistant_planner_context(parent_id, request, thread.id)
-        tool_registry = ParentAssistantToolRegistry(self, parent_id)
-        tool_call = ParentAssistantLLMService().plan_tool_call(
-            message=message,
-            context=context,
-            tools=tool_registry.list_tools(),
-        ) or self._fallback_tool_call(parent_id, request, context)
+        context["memory"] = memory
+        intent = self._detect_assistant_intent(message, memory)
 
-        if not tool_call.get("tool_name"):
-            tool_call = self._fallback_tool_call(parent_id, request, context)
+        if intent in {"greeting", "thanks", "help", "unknown"}:
+            answer = self._assistant_conversation_response(parent_id, intent)
+            self._add_assistant_message(thread.id, "assistant", answer, intent="conversation")
+            self._save_assistant_memory(thread.id, memory)
+            return self._assistant_response_payload(
+                thread_id=thread.id,
+                intent="conversation",
+                answer=answer,
+                suggestions=self._assistant_default_suggestions(parent_id),
+                data={"card_type": "help"},
+            )
+
+        if intent == "quiz_cancel":
+            memory.pop("pending_quiz", None)
+            answer = "No problem. I cancelled that quiz plan."
+            self._add_assistant_message(thread.id, "assistant", answer, intent="quiz_assignment")
+            self._save_assistant_memory(thread.id, memory)
+            return self._assistant_response_payload(
+                thread_id=thread.id,
+                intent="quiz_assignment",
+                answer=answer,
+                suggestions=["Show weak topics", "Show syllabus", "Assign a different quiz"],
+                data={"card_type": "quiz_cancelled"},
+            )
+
+        if intent == "quiz_confirm" and memory.get("pending_quiz"):
+            result = self._execute_pending_quiz(parent_id, thread.id, parent_message.id, memory)
+            self._add_assistant_message(thread.id, "assistant", result["answer"], intent="quiz_assignment")
+            self._save_assistant_memory(thread.id, result["memory"])
+            return self._assistant_response_payload(
+                thread_id=thread.id,
+                intent="quiz_assignment",
+                answer=result["answer"],
+                tool_name="create_quiz_assignment",
+                suggestions=result["suggestions"],
+                data=result["data"],
+            )
+
+        if intent == "quiz_assignment":
+            result = self._prepare_pending_quiz(parent_id, request, thread.id, memory)
+            self._add_assistant_message(thread.id, "assistant", result["answer"], intent="quiz_assignment")
+            self._save_assistant_memory(thread.id, result["memory"])
+            return self._assistant_response_payload(
+                thread_id=thread.id,
+                intent="quiz_assignment",
+                answer=result["answer"],
+                requires_student=result.get("requires_student", False),
+                requires_subject=result.get("requires_subject", False),
+                suggestions=result["suggestions"],
+                data=result["data"],
+            )
+
+        tool_registry = ParentAssistantToolRegistry(self, parent_id)
+        tool_call = self._assistant_tool_call_for_intent(intent, request, context)
 
         tool_arguments = self._merge_selected_context_into_tool_args(request, tool_call.get("arguments", {}))
         tool_call["arguments"] = tool_arguments
@@ -625,7 +665,8 @@ class ParentService:
             tool_call=tool_call,
             tool_result=tool_result,
         ) or tool_result["fallback_answer"]
-        intent = tool_result.get("intent", "learning_summary")
+        intent = tool_result.get("intent", intent)
+        memory = self._update_assistant_memory_from_tool_result(memory, intent, tool_result)
 
         self._add_assistant_message(
             thread_id=thread.id,
@@ -633,23 +674,26 @@ class ParentService:
             content=answer,
             intent=intent,
         )
+        self._save_assistant_memory(thread.id, memory)
 
         data = tool_result.get("data", {})
+        data = dict(data)
+        data.setdefault("card_type", self._assistant_card_type(intent))
         data["tool_call"] = {
             "id": audit.id if audit else None,
             "tool_name": tool_call["tool_name"],
             "status": tool_result.get("status", "completed" if tool_result.get("ok") else "failed"),
         }
-        return {
-            "intent": intent,
-            "answer": answer,
-            "thread_id": thread.id,
-            "tool_name": tool_call["tool_name"],
-            "requires_student": tool_result.get("requires_student", False),
-            "requires_subject": tool_result.get("requires_subject", False),
-            "suggestions": tool_result.get("suggestions", []),
-            "data": data,
-        }
+        return self._assistant_response_payload(
+            thread_id=thread.id,
+            intent=intent,
+            answer=answer,
+            tool_name=tool_call["tool_name"],
+            requires_student=tool_result.get("requires_student", False),
+            requires_subject=tool_result.get("requires_subject", False),
+            suggestions=tool_result.get("suggestions", []),
+            data=data,
+        )
 
     def _plan_assistant_request(self, parent_id: int, request: ParentAssistantChatRequest) -> dict:
         context = self._assistant_planner_context(parent_id, request)
@@ -662,6 +706,543 @@ class ParentService:
             plan["student_id"] = None
 
         return plan
+
+    def _assistant_response_payload(
+        self,
+        thread_id: int,
+        intent: str,
+        answer: str,
+        tool_name: Optional[str] = None,
+        requires_student: bool = False,
+        requires_subject: bool = False,
+        suggestions: Optional[list[str]] = None,
+        data: Optional[dict] = None,
+    ) -> dict:
+        return {
+            "intent": intent,
+            "answer": answer,
+            "thread_id": thread_id,
+            "tool_name": tool_name,
+            "requires_student": requires_student,
+            "requires_subject": requires_subject,
+            "suggestions": suggestions or [],
+            "data": data or {},
+        }
+
+    def _assistant_memory(self, thread_id: int) -> dict:
+        message = (
+            self.db.query(ParentAssistantMessage)
+            .filter(
+                ParentAssistantMessage.thread_id == thread_id,
+                ParentAssistantMessage.role == "system",
+                ParentAssistantMessage.intent == "memory",
+            )
+            .order_by(ParentAssistantMessage.created_at.desc(), ParentAssistantMessage.id.desc())
+            .first()
+        )
+        if not message:
+            return {}
+        try:
+            parsed = json.loads(message.content)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    def _save_assistant_memory(self, thread_id: int, memory: dict) -> None:
+        safe_memory = self._json_safe(memory)
+        self._add_assistant_message(
+            thread_id=thread_id,
+            role="system",
+            content=json.dumps(safe_memory),
+            intent="memory",
+        )
+
+    def _apply_selected_context_to_memory(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+        memory: dict,
+    ) -> dict:
+        next_memory = dict(memory or {})
+        if request.student_id is not None and self.can_view_student(parent_id, request.student_id):
+            student = self._get_student_by_id(request.student_id)
+            if student:
+                next_memory["student_id"] = student.id
+                next_memory["student_name"] = student.full_name or student.username
+        if request.subject_id is not None:
+            subject = self.db.query(Subject).filter(Subject.id == request.subject_id).first()
+            if subject:
+                next_memory["subject_id"] = subject.id
+                next_memory["subject_name"] = subject.name
+        if request.grade_id is not None:
+            grade = self.db.query(Grade).filter(Grade.id == request.grade_id).first()
+            if grade:
+                next_memory["grade_id"] = grade.id
+                next_memory["grade_name"] = grade.display_name
+                next_memory["grade_level"] = grade.level
+        return next_memory
+
+    def _assistant_default_suggestions(self, parent_id: int) -> list[str]:
+        children = self.get_linked_students(parent_id)
+        if children:
+            return ["Show weak topics", "Show strong topics", "Show syllabus", "Assign a practice quiz"]
+        return ["Request a student link", "What can you do?", "Show syllabus"]
+
+    def _assistant_conversation_response(self, parent_id: int, intent: str) -> str:
+        if intent == "greeting":
+            return self._assistant_greeting_response(parent_id)
+        if intent == "thanks":
+            return "You are welcome. I can also help explain progress, find weak topics, show syllabus, or prepare a short practice quiz."
+        if intent == "help":
+            return (
+                "I can help you understand your child's learning progress, find weak and strong topics, "
+                "show syllabus coverage, and prepare short practice quizzes for the student's dashboard."
+            )
+        return (
+            "I can help with progress, weak topics, strong topics, syllabus, and practice quizzes. "
+            "Try asking, \"What are my child's weak topics?\" or \"Show Grade 7 Math syllabus.\""
+        )
+
+    def _assistant_tool_call_for_intent(
+        self,
+        intent: str,
+        request: ParentAssistantChatRequest,
+        context: dict,
+    ) -> dict:
+        arguments = self._assistant_base_tool_arguments(request, context)
+        if intent == "syllabus":
+            subject = self._resolve_assistant_subject(
+                request.message,
+                request.subject_id or arguments.get("subject_id"),
+                context.get("memory") or {},
+            )
+            if subject:
+                arguments["subject_id"] = subject.id
+                grade = self._resolve_assistant_grade(
+                    subject.id,
+                    request.message,
+                    request.grade_id or arguments.get("grade_id"),
+                    context.get("memory") or {},
+                )
+                if grade:
+                    arguments["grade_id"] = grade.id
+            return {"tool_name": "get_syllabus", "arguments": arguments, "confidence": 1.0}
+        if intent == "strong_topics":
+            return {"tool_name": "get_strong_topics", "arguments": arguments, "confidence": 1.0}
+        if intent == "weak_topics":
+            return {"tool_name": "get_weak_topics", "arguments": arguments, "confidence": 1.0}
+        if intent == "assignment_status":
+            last_assignment = (context.get("memory") or {}).get("last_assignment") or {}
+            if last_assignment.get("id"):
+                arguments["assignment_id"] = last_assignment["id"]
+            return {"tool_name": "get_assignment_status", "arguments": arguments, "confidence": 1.0}
+        return {"tool_name": "get_learning_summary", "arguments": arguments, "confidence": 1.0}
+
+    def _assistant_base_tool_arguments(
+        self,
+        request: ParentAssistantChatRequest,
+        context: dict,
+    ) -> dict:
+        memory = context.get("memory") or {}
+        arguments = {
+            "student_id": request.student_id or memory.get("student_id"),
+            "subject_id": request.subject_id or memory.get("subject_id"),
+            "grade_id": request.grade_id or memory.get("grade_id"),
+        }
+        if arguments["student_id"] is None and len(context.get("children", [])) == 1:
+            arguments["student_id"] = context["children"][0]["student_id"]
+        return arguments
+
+    def _assistant_card_type(self, intent: str) -> str:
+        return {
+            "weak_topics": "topics",
+            "strong_topics": "topics",
+            "learning_summary": "learning_summary",
+            "syllabus": "syllabus",
+            "quiz_assignment": "quiz_assignment",
+            "assignment_status": "assignment_status",
+        }.get(intent, "message")
+
+    def _update_assistant_memory_from_tool_result(
+        self,
+        memory: dict,
+        intent: str,
+        tool_result: dict,
+    ) -> dict:
+        next_memory = dict(memory or {})
+        data = tool_result.get("data") or {}
+
+        if data.get("student_id"):
+            next_memory["student_id"] = data["student_id"]
+        if data.get("student_name"):
+            next_memory["student_name"] = data["student_name"]
+        if data.get("subject_id"):
+            next_memory["subject_id"] = data["subject_id"]
+        if data.get("subject_name"):
+            next_memory["subject_name"] = data["subject_name"]
+        if data.get("grade_id"):
+            next_memory["grade_id"] = data["grade_id"]
+        if data.get("grade_name"):
+            next_memory["grade_name"] = data["grade_name"]
+
+        if intent == "weak_topics":
+            topics = data.get("weak_topics") or []
+            next_memory["last_topic_focus"] = "weak_topics"
+            next_memory["last_domains"] = self._topic_memory_payload(topics)
+        elif intent == "strong_topics":
+            topics = data.get("strong_topics") or []
+            next_memory["last_topic_focus"] = "strong_topics"
+            next_memory["last_domains"] = self._topic_memory_payload(topics)
+        elif intent == "learning_summary":
+            topics = data.get("weak_topics") or data.get("strong_topics") or []
+            if topics:
+                next_memory["last_topic_focus"] = "weak_topics"
+                next_memory["last_domains"] = self._topic_memory_payload(topics[:2])
+        elif intent == "syllabus":
+            next_memory["last_syllabus_domains"] = [
+                {
+                    "domain_id": domain.get("domain_id"),
+                    "domain_name": domain.get("domain_name"),
+                    "domain_code": domain.get("domain_code"),
+                }
+                for domain in data.get("domains", [])
+            ]
+
+        assignment = data.get("assignment")
+        if isinstance(assignment, dict):
+            next_memory["last_assignment"] = assignment
+            next_memory.pop("pending_quiz", None)
+
+        return next_memory
+
+    def _topic_memory_payload(self, topics: list[dict]) -> list[dict]:
+        return [
+            {
+                "domain_id": topic.get("domain_id"),
+                "domain_name": topic.get("domain_name"),
+                "domain_code": topic.get("domain_code"),
+            }
+            for topic in topics
+            if topic.get("domain_id")
+        ]
+
+    def _prepare_pending_quiz(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+        thread_id: int,
+        memory: dict,
+    ) -> dict:
+        message = request.message
+        previous_quiz = memory.get("pending_quiz") if isinstance(memory.get("pending_quiz"), dict) else None
+        student = self._resolve_quiz_student(parent_id, request, memory)
+        if not student:
+            children = [child.model_dump() for child in self.get_linked_students(parent_id)]
+            answer = "Which child should I create the quiz for? Select a child, then ask again."
+            return {
+                "answer": answer,
+                "memory": memory,
+                "requires_student": True,
+                "suggestions": [f"Assign a 5 question quiz to {child['student_name']}" for child in children[:3]],
+                "data": {"card_type": "clarification", "children": children},
+            }
+
+        subject = self._resolve_quiz_subject(request, memory, previous_quiz)
+        if not subject:
+            subjects = self.db.query(Subject).order_by(Subject.name).all()
+            answer = "Which subject should I use for the quiz? Select a subject, or include it in your message."
+            return {
+                "answer": answer,
+                "memory": {**memory, "student_id": student.id, "student_name": student.full_name or student.username},
+                "requires_subject": True,
+                "suggestions": [f"Assign a 5 question {subject.name} quiz" for subject in subjects[:3]],
+                "data": {
+                    "card_type": "clarification",
+                    "student_id": student.id,
+                    "subjects": [{"id": item.id, "name": item.name, "code": item.code} for item in subjects],
+                },
+            }
+
+        grade = self._resolve_quiz_grade(subject.id, request, memory, previous_quiz)
+        if not grade:
+            grades = self.db.query(Grade).filter(Grade.subject_id == subject.id).order_by(Grade.level).all()
+            answer = f"Which grade should I use for the {subject.name} quiz?"
+            return {
+                "answer": answer,
+                "memory": {
+                    **memory,
+                    "student_id": student.id,
+                    "student_name": student.full_name or student.username,
+                    "subject_id": subject.id,
+                    "subject_name": subject.name,
+                },
+                "requires_subject": False,
+                "suggestions": [
+                    f"Assign a 5 question {subject.name} quiz for {item.display_name}"
+                    for item in grades[:3]
+                ],
+                "data": {
+                    "card_type": "clarification",
+                    "student_id": student.id,
+                    "subject_id": subject.id,
+                    "grades": [{"id": item.id, "name": item.display_name, "level": item.level} for item in grades],
+                },
+            }
+
+        difficulty = self._resolve_quiz_difficulty(message, previous_quiz)
+        question_count = self._resolve_quiz_question_count(message, previous_quiz)
+        domain_ids = self._resolve_quiz_domain_ids(message, student.id, subject.id, grade.id, memory, previous_quiz)
+        domains = self.db.query(Domain).filter(Domain.id.in_(domain_ids)).order_by(Domain.display_order, Domain.name).all() if domain_ids else []
+        student_name = student.full_name or student.username
+        focus_label = self._quiz_focus_label(message, subject, domains, memory, previous_quiz)
+        domain_payload = [
+            {"domain_id": domain.id, "domain_name": domain.name, "domain_code": domain.code}
+            for domain in domains
+        ]
+        title = f"{focus_label} Practice"[:150]
+        pending_quiz = {
+            "student_id": student.id,
+            "student_name": student_name,
+            "subject_id": subject.id,
+            "subject_name": subject.name,
+            "grade_id": grade.id,
+            "grade_name": grade.display_name,
+            "difficulty": difficulty,
+            "question_count": question_count,
+            "domain_ids": domain_ids,
+            "domains": domain_payload,
+            "title": title,
+            "description": f"Created by the parent assistant from: {message[:220]}",
+            "generate_missing": True,
+            "created_from_thread_id": thread_id,
+        }
+
+        next_memory = {
+            **memory,
+            "student_id": student.id,
+            "student_name": student_name,
+            "subject_id": subject.id,
+            "subject_name": subject.name,
+            "grade_id": grade.id,
+            "grade_name": grade.display_name,
+            "pending_quiz": pending_quiz,
+        }
+        domain_text = f" focused on {', '.join(domain.name for domain in domains)}" if domains else ""
+        answer = (
+            f"I can assign {student_name} a {question_count}-question {difficulty} "
+            f"{subject.name} quiz for {grade.display_name}{domain_text}. Should I assign it?"
+        )
+        return {
+            "answer": answer,
+            "memory": next_memory,
+            "suggestions": ["Yes, assign it", "Make it easier", "Make it harder", "Change to 10 questions", "Cancel"],
+            "data": {
+                "card_type": "quiz_preview",
+                "pending_quiz": pending_quiz,
+            },
+        }
+
+    def _execute_pending_quiz(
+        self,
+        parent_id: int,
+        thread_id: int,
+        message_id: int,
+        memory: dict,
+    ) -> dict:
+        pending_quiz = memory.get("pending_quiz") or {}
+        audit = self._start_tool_call(
+            thread_id=thread_id,
+            message_id=message_id,
+            tool_name="create_quiz_assignment",
+            arguments=pending_quiz,
+        )
+        try:
+            assignment = self.create_quiz_assignment(
+                parent_id=parent_id,
+                request=QuizAssignmentCreateRequest(
+                    student_id=pending_quiz["student_id"],
+                    title=pending_quiz.get("title") or "Assistant Practice Quiz",
+                    description=pending_quiz.get("description"),
+                    subject_id=pending_quiz.get("subject_id"),
+                    grade_id=pending_quiz.get("grade_id"),
+                    domain_ids=pending_quiz.get("domain_ids") or [],
+                    difficulty=pending_quiz.get("difficulty") or "medium",
+                    question_count=pending_quiz.get("question_count") or 5,
+                    generate_missing=pending_quiz.get("generate_missing", True),
+                ),
+            )
+            generated_count = int(assignment.get("generated_questions", 0))
+            self._finish_tool_call(audit, "completed", result={"assignment": assignment})
+            next_memory = dict(memory)
+            next_memory.pop("pending_quiz", None)
+            next_memory["last_assignment"] = self._assignment_chat_payload(assignment)
+            answer = (
+                f"Done. I assigned {assignment.get('student_name') or pending_quiz.get('student_name')} "
+                f"a {assignment['question_count']}-question {assignment['difficulty']} quiz."
+            )
+            if generated_count > 0:
+                answer += f" I generated {generated_count} new question{'s' if generated_count != 1 else ''} to fill it."
+            else:
+                answer += " I used existing unanswered questions."
+            return {
+                "answer": answer,
+                "memory": next_memory,
+                "suggestions": ["Show weak topics", "Check assignment status", "Assign another quiz"],
+                "data": {
+                    "card_type": "assignment_confirmation",
+                    "assignment": self._assignment_chat_payload(assignment),
+                    "generated_questions": generated_count,
+                    "tool_call": {"id": audit.id, "tool_name": "create_quiz_assignment", "status": "completed"},
+                },
+            }
+        except Exception as exc:
+            self.db.rollback()
+            audit = self.db.query(ParentAssistantToolCall).filter(ParentAssistantToolCall.id == audit.id).first()
+            if audit:
+                self._finish_tool_call(audit, "failed", result={"error": str(exc)}, error=str(exc))
+            next_memory = dict(memory)
+            answer = (
+                f"I could not assign that quiz yet: {exc}\n\n"
+                "Try fewer questions, mixed difficulty, broader filters, or use the Assign a Quiz form."
+            )
+            return {
+                "answer": answer,
+                "memory": next_memory,
+                "suggestions": ["Make it easier", "Change to 3 questions", "Show weak topics"],
+                "data": {
+                    "card_type": "quiz_error",
+                    "pending_quiz": pending_quiz,
+                    "error": str(exc),
+                    "tool_call": {"id": audit.id if audit else None, "tool_name": "create_quiz_assignment", "status": "failed"},
+                },
+            }
+
+    def _resolve_quiz_student(
+        self,
+        parent_id: int,
+        request: ParentAssistantChatRequest,
+        memory: dict,
+    ) -> Optional[User]:
+        student_id = request.student_id or memory.get("student_id")
+        student = self._resolve_assistant_student(parent_id, student_id)
+        if student:
+            return student
+        return self._resolve_assistant_student(parent_id, None)
+
+    def _resolve_quiz_subject(
+        self,
+        request: ParentAssistantChatRequest,
+        memory: dict,
+        previous_quiz: Optional[dict],
+    ) -> Optional[Subject]:
+        plan = {}
+        if previous_quiz and self._message_is_quiz_adjustment(request.message):
+            plan["subject_id"] = previous_quiz.get("subject_id")
+        elif memory.get("subject_id"):
+            plan["subject_id"] = memory["subject_id"]
+        subject = self._resolve_assistant_subject(request.message, request.subject_id, plan)
+        if subject:
+            return subject
+        subjects = self.db.query(Subject).order_by(Subject.name).all()
+        return subjects[0] if len(subjects) == 1 else None
+
+    def _resolve_quiz_grade(
+        self,
+        subject_id: int,
+        request: ParentAssistantChatRequest,
+        memory: dict,
+        previous_quiz: Optional[dict],
+    ) -> Optional[Grade]:
+        plan = {}
+        if previous_quiz and self._message_is_quiz_adjustment(request.message):
+            plan["grade_id"] = previous_quiz.get("grade_id")
+        elif memory.get("grade_id"):
+            plan["grade_id"] = memory["grade_id"]
+        grade = self._resolve_assistant_grade(subject_id, request.message, request.grade_id, plan)
+        if grade:
+            return grade
+        grades = self.db.query(Grade).filter(Grade.subject_id == subject_id).order_by(Grade.level).all()
+        return grades[0] if len(grades) == 1 else None
+
+    def _resolve_quiz_difficulty(self, message: str, previous_quiz: Optional[dict]) -> str:
+        if previous_quiz and self._message_is_quiz_adjustment(message):
+            text = message.lower()
+            if "easier" in text:
+                return "easy"
+            if "harder" in text:
+                return "hard"
+            if previous_quiz.get("difficulty") in {"easy", "medium", "hard", "mixed"}:
+                return previous_quiz["difficulty"]
+        return self._parse_assignment_difficulty(message)
+
+    def _resolve_quiz_question_count(self, message: str, previous_quiz: Optional[dict]) -> int:
+        parsed_count = self._parse_assignment_question_count(message)
+        if previous_quiz and self._message_is_quiz_adjustment(message):
+            count_match = re.search(r"\b(\d{1,2})\b", message.lower())
+            if not count_match and isinstance(previous_quiz.get("question_count"), int):
+                return previous_quiz["question_count"]
+        return parsed_count
+
+    def _resolve_quiz_domain_ids(
+        self,
+        message: str,
+        student_id: int,
+        subject_id: int,
+        grade_id: int,
+        memory: dict,
+        previous_quiz: Optional[dict],
+    ) -> list[int]:
+        if previous_quiz and self._message_is_quiz_adjustment(message):
+            return previous_quiz.get("domain_ids") or []
+
+        text = message.lower()
+        if any(term in text for term in ["that", "those", "same", "weak", "mistake"]):
+            remembered_domains = memory.get("last_domains") or []
+            remembered_ids = [
+                item.get("domain_id")
+                for item in remembered_domains
+                if isinstance(item, dict) and item.get("domain_id")
+            ]
+            if remembered_ids:
+                valid_domain_ids = {
+                    row[0]
+                    for row in self.db.query(Domain.id)
+                    .join(Standard, Standard.domain_id == Domain.id)
+                    .filter(Domain.subject_id == subject_id, Standard.grade_id == grade_id)
+                    .distinct()
+                    .all()
+                }
+                return [domain_id for domain_id in remembered_ids if domain_id in valid_domain_ids]
+
+        return self._resolve_assignment_domain_ids(
+            message=message,
+            student_id=student_id,
+            subject_id=subject_id,
+            grade_id=grade_id,
+            plan={"focus": "weak_topics"} if self._message_requests_weak_topics(message) else None,
+        )
+
+    def _quiz_focus_label(
+        self,
+        message: str,
+        subject: Subject,
+        domains: list[Domain],
+        memory: dict,
+        previous_quiz: Optional[dict],
+    ) -> str:
+        if domains:
+            if self._message_requests_weak_topics(message) or (memory.get("last_topic_focus") == "weak_topics" and "that" in message.lower()):
+                return "Weak Topics"
+            if len(domains) == 1:
+                return domains[0].name
+            return "Selected Topics"
+        if previous_quiz and previous_quiz.get("title") and self._message_is_quiz_adjustment(message):
+            return str(previous_quiz["title"]).replace(" Practice", "")
+        return subject.name
+
+    def _message_is_quiz_adjustment(self, message: str) -> bool:
+        text = message.lower()
+        return any(term in text for term in ["easier", "harder", "change", "instead", "make it", "questions", "cancel"])
 
     def _assistant_planner_context(
         self,
@@ -913,21 +1494,47 @@ class ParentService:
             "once a student is linked to your parent account."
         )
 
-    def _detect_assistant_intent(self, message: str) -> str:
+    def _detect_assistant_intent(self, message: str, memory: Optional[dict] = None) -> str:
         text = message.lower()
+        normalized = text.strip().strip("!.?, ")
+        memory = memory or {}
+
+        if self._is_assistant_greeting(message):
+            return "greeting"
+        if normalized in {"thanks", "thank you", "thx", "ty", "ok thanks", "great thanks"}:
+            return "thanks"
+        if any(term in text for term in ["what can you do", "help me", "how can you help", "what do you do"]):
+            return "help"
+
+        has_pending_quiz = bool(memory.get("pending_quiz"))
+        if has_pending_quiz and normalized in {"yes", "yes assign it", "assign it", "go ahead", "do it", "confirm", "sure"}:
+            return "quiz_confirm"
+        if has_pending_quiz and normalized in {"no", "cancel", "never mind", "nevermind", "stop", "do not assign it"}:
+            return "quiz_cancel"
+
         assignment_actions = ["assign", "post", "create", "make", "give", "send"]
-        assignment_targets = ["quiz", "questions", "problems", "practice set"]
+        assignment_targets = ["quiz", "questions", "question", "problems", "problem", "practice set", "practice"]
         if (
             any(action in text for action in assignment_actions)
             and any(target in text for target in assignment_targets)
         ):
             return "quiz_assignment"
-        if any(term in text for term in ["syllabus", "curriculum", "topics", "standards", "domains"]):
-            return "syllabus"
+        if has_pending_quiz and any(term in text for term in ["easier", "harder", "change", "instead", "question"]):
+            return "quiz_assignment"
+        if any(term in text for term in ["assign that", "practice on that", "quiz on that", "questions on that"]):
+            return "quiz_assignment"
+        if any(term in text for term in ["assignment status", "quiz status", "did they finish", "assigned quiz", "what quiz"]):
+            return "assignment_status"
         if any(term in text for term in ["weak", "struggl", "improve", "mistake", "practice", "behind"]):
             return "weak_topics"
         if any(term in text for term in ["strong", "strength", "best", "good at", "doing well"]):
             return "strong_topics"
+        if any(term in text for term in ["syllabus", "curriculum", "standards", "domains", "grade 6", "grade 7"]):
+            return "syllabus"
+        if any(term in text for term in ["progress", "how is", "how's", "doing", "score", "performance", "summary"]):
+            return "learning_summary"
+        if len(normalized.split()) <= 3:
+            return "unknown"
         return "learning_summary"
 
     def _resolve_assistant_student(self, parent_id: int, student_id: Optional[int]) -> Optional[User]:

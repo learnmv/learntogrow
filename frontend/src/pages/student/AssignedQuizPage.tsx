@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, CheckCircle, ClipboardList, RotateCcw, XCircle } from 'lucide-react'
 import { GeoGebraApplet } from '../../components/geogebra/GeoGebraApplet'
+import { QuestionStimulus } from '../../components/QuestionStimulus'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
 import { cn, renderMathToHtml } from '../../lib/utils'
 import {
@@ -206,11 +207,10 @@ export function AssignedQuizPage() {
       <div className="bg-surface-elevated rounded-2xl p-6 md:p-8 shadow-sm border border-border">
         <div className="mb-6">
           <p className="text-sm font-display font-medium text-sage-700">{assignment.title}</p>
-          <h1
-            className="mt-2 font-display text-2xl font-semibold text-text leading-relaxed"
-            dangerouslySetInnerHTML={{
-              __html: renderMathToHtml(currentQuestion?.question_text ?? ''),
-            }}
+          <QuestionStimulus
+            questionText={currentQuestion?.question_text ?? ''}
+            stimulus={currentQuestion?.stimulus}
+            questionClassName="mt-2 font-display text-2xl font-semibold text-text leading-relaxed"
           />
         </div>
 
