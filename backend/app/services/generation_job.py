@@ -174,8 +174,12 @@ class QuestionGenerationJobService:
             model=original.model,
             timeout=original.timeout or 300,
             quality_mode=original.quality_mode or "reviewed",
-            candidate_count=original.candidate_count or 1,
-            max_repair_attempts=original.max_repair_attempts or 1,
+            candidate_count=original.candidate_count if original.candidate_count is not None else 1,
+            max_repair_attempts=(
+                original.max_repair_attempts
+                if original.max_repair_attempts is not None
+                else 1
+            ),
             min_review_score=float(original.min_review_score or 0.75),
             subject_id=original.subject_id,
             grade_id=original.grade_id,
@@ -315,6 +319,10 @@ class QuestionGenerationJobService:
                 requires_diagram=question_data.get("requires_diagram", False),
                 applet_type=question_data.get("applet_type"),
                 geogebra_commands=question_data.get("geogebra_commands"),
+                generation_signature=question_data.get("generation_signature"),
+                math_spec=question_data.get("math_spec"),
+                semantic_hash=question_data.get("semantic_hash"),
+                quality_score=question_data.get("quality_score"),
                 generated_by="admin_job",
                 is_active=True,
             )

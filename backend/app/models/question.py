@@ -26,6 +26,10 @@ class Question(Base):
     applet_type = Column(String(20))
     geogebra_commands = Column(JSON)
     applet_config = Column(JSON)
+    generation_signature = Column(JSON)
+    math_spec = Column(JSON)
+    semantic_hash = Column(String(128))
+    quality_score = Column(Numeric(4, 3))
 
     # Tracking
     created_at = Column(TIMESTAMP, default=datetime.utcnow, server_default=func.now())

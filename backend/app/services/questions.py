@@ -19,6 +19,7 @@ from app.services.ollama_client import (
     ollama_supports_structured_outputs,
     parse_ollama_json_response,
 )
+from app.services.question_genome import QuestionGenomePlanner
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ DUPLICATE_SAME_NUMBERS_ANSWER_SIMILARITY_THRESHOLD = 0.70
 DUPLICATE_NUMBER_OVERLAP_THRESHOLD = 0.75
 DUPLICATE_OPTION_OVERLAP_THRESHOLD = 0.75
 QUESTION_BANK_LOCK_NAMESPACE = 900_000_000
+GENOME_MIN_ATTEMPTS = 4
 
 _OPTION_LABEL_PATTERN = re.compile(r"^[A-Da-d][\.)\s\-]+\s*")
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -360,6 +362,7 @@ class QuestionService:
         candidate_numbers = extract_numeric_tokens(candidate_text)
         candidate_options = question_data.get("options")
         candidate_answer = normalize_for_match(question_data.get("answer") or question_data.get("correct_answer") or "")
+        candidate_semantic_hash = question_data.get("semantic_hash")
 
         query = self.db.query(Question).filter(
             Question.standard_id == standard_id,
@@ -367,6 +370,14 @@ class QuestionService:
         )
         if exclude_question_id is not None:
             query = query.filter(Question.id != exclude_question_id)
+        if candidate_semantic_hash:
+            exact_hash_match = query.filter(Question.semantic_hash == candidate_semantic_hash).first()
+            if exact_hash_match:
+                return {
+                    "question_id": exact_hash_match.id,
+                    "reason": "semantic hash match",
+                    "similarity": 1.0,
+                }
 
         for existing in query.order_by(Question.id.desc()).limit(200).all():
             existing_normalized = normalize_question_for_similarity(existing.question_text)
@@ -471,12 +482,13 @@ class QuestionService:
         audit_callback: Optional[Callable[..., None]] = None,
     ) -> dict:
         last_error = None
+        active_prompt = prompt
 
         for attempt in range(MAX_RETRIES):
             started_at = time.perf_counter()
             try:
                 temperature = BASE_TEMPERATURE + (attempt * TEMPERATURE_INCREMENT)
-                raw = self._call_ollama_json(prompt, model, timeout, temperature=temperature)
+                raw = self._call_ollama_json(active_prompt, model, timeout, temperature=temperature)
                 question_data = self._normalize_question_data(raw, standard, difficulty, question_type)
                 self.assert_not_duplicate_question(standard.id, question_data)
                 elapsed = time.perf_counter() - started_at
@@ -504,6 +516,14 @@ class QuestionService:
                 elapsed = time.perf_counter() - started_at
                 logger.warning(f"Attempt {attempt + 1}: Validation failed: {exc}")
                 last_error = exc
+                if "too similar" in str(exc).lower():
+                    active_prompt = (
+                        f"{prompt}\n\n"
+                        "DIVERSITY RETRY FEEDBACK:\n"
+                        f"The previous attempt was rejected because it was too similar: {exc}.\n"
+                        "Keep the genome skill aligned, but change the surface scenario details, all reusable "
+                        "numbers, and the answer value. Do not repeat the rejected setup."
+                    )
                 self._audit(
                     audit_callback,
                     stage="candidate",
@@ -742,15 +762,47 @@ class QuestionService:
         )
 
         plan: dict = {}
-        prompt = base_prompt
+        genome_planner = QuestionGenomePlanner(self.db) if custom_prompt is None else None
         attempts_to_review = actual_candidate_count
         if actual_quality_mode in {"fast", "reviewed"}:
             attempts_to_review = max(1, actual_max_repairs + 1)
+        if genome_planner:
+            attempts_to_review = max(attempts_to_review, GENOME_MIN_ATTEMPTS)
 
         candidates = []
         last_error = None
+        rejection_notes: list[str] = []
         started_at = time.perf_counter()
         for candidate_index in range(attempts_to_review):
+            genome = None
+            prompt = base_prompt
+            if genome_planner:
+                genome = genome_planner.build_genome(
+                    standard=standard,
+                    difficulty=actual_difficulty,
+                    question_type=question_type,
+                    attempt_index=candidate_index,
+                    rejection_notes=rejection_notes[-5:],
+                )
+                prompt = genome_planner.compose_prompt(base_prompt, genome)
+                self._audit(
+                    audit_callback,
+                    stage="genome",
+                    status="completed",
+                    prompt_name="question_genome",
+                    model=ollama_model,
+                    request_payload={
+                        "standard_id": standard.id,
+                        "difficulty": actual_difficulty,
+                        "candidate_index": candidate_index,
+                    },
+                    response_payload=genome,
+                    candidate_index=candidate_index,
+                    notes=(
+                        f"{genome['context_family']} | {genome['number_pattern']} | "
+                        f"{genome['misconception_target']}"
+                    ),
+                )
             try:
                 candidate = self._generate_candidate(
                     standard=standard,
@@ -779,12 +831,14 @@ class QuestionService:
                         "question": candidate,
                         "review": review,
                         "score": float(review.get("score", 0) or 0),
+                        "genome": genome,
                     }
                 )
                 if review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:
                     break
             except Exception as exc:
                 last_error = exc
+                rejection_notes.append(str(exc))
                 logger.warning(f"Candidate {candidate_index + 1} failed for {standard.code}: {exc}")
 
         if not candidates:
@@ -801,6 +855,11 @@ class QuestionService:
 
         best = max(approved, key=lambda candidate: candidate["score"])
         question_data = best["question"]
+        best_genome = best.get("genome") or {}
+        if genome_planner and best_genome:
+            question_data["generation_signature"] = best_genome
+            question_data["math_spec"] = genome_planner.math_spec_from_question(question_data, best_genome)
+            question_data["semantic_hash"] = genome_planner.semantic_hash(standard.id, question_data, best_genome)
         question_data["review"] = best["review"]
         question_data["quality_score"] = best["score"]
         question_data["planner"] = plan

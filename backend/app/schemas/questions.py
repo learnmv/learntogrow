@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Any, Optional, List
 from datetime import datetime
 
 from app.prompts import AppletType
@@ -79,6 +79,10 @@ class QuestionDBResponse(QuestionContent):
     created_at: Optional[datetime] = Field(None, description="Creation timestamp")
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
     generated_by: Optional[str] = Field(None, description="Model/system that generated the question")
+    generation_signature: Optional[dict[str, Any]] = Field(None, description="Generation genome metadata")
+    math_spec: Optional[dict[str, Any]] = Field(None, description="Math specification metadata")
+    semantic_hash: Optional[str] = Field(None, description="Semantic uniqueness hash")
+    quality_score: Optional[float] = Field(None, description="Generation quality score")
 
     class Config:
         from_attributes = True
