@@ -493,6 +493,8 @@ class ParentService:
             correct_answer=question_data["answer"],
             explanation=question_data.get("explanation"),
             stimulus=question_data.get("stimulus"),
+            math_world=question_data.get("math_world"),
+            diagram_spec=question_data.get("diagram_spec"),
             difficulty=question_data.get("difficulty"),
             requires_diagram=question_data.get("requires_diagram", False),
             applet_type=question_data.get("applet_type"),

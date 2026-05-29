@@ -316,6 +316,8 @@ class QuestionGenerationJobService:
                 correct_answer=answer,
                 explanation=question_data.get("explanation"),
                 stimulus=question_data.get("stimulus"),
+                math_world=question_data.get("math_world"),
+                diagram_spec=question_data.get("diagram_spec"),
                 difficulty=question_data.get("difficulty", target_difficulty),
                 requires_diagram=question_data.get("requires_diagram", False),
                 applet_type=question_data.get("applet_type"),

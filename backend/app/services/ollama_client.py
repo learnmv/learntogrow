@@ -1,8 +1,17 @@
 import json
+import re
 from typing import Any
 from urllib.parse import urlparse
 
 from app.config import Settings
+
+
+_INVALID_JSON_BACKSLASH_PATTERN = re.compile(r'\\(?!["\\/bfnrtu])')
+
+
+def _escape_invalid_json_backslashes(text: str) -> str:
+    """Double non-JSON backslashes, such as LaTeX ``\frac`` in model output."""
+    return _INVALID_JSON_BACKSLASH_PATTERN.sub(r"\\\\", text)
 
 
 def ollama_endpoint(settings: Settings, endpoint: str) -> str:
@@ -50,7 +59,11 @@ def parse_ollama_json_response(raw_text: str) -> dict[str, Any]:
         end = text.rfind("}")
         if start == -1 or end == -1 or end <= start:
             raise
-        parsed = json.loads(text[start:end + 1])
+        json_text = text[start:end + 1]
+        try:
+            parsed = json.loads(json_text)
+        except json.JSONDecodeError:
+            parsed = json.loads(_escape_invalid_json_backslashes(json_text))
 
     if not isinstance(parsed, dict):
         raise ValueError("Expected Ollama JSON response to be an object")

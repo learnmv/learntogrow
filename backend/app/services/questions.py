@@ -19,7 +19,9 @@ from app.services.ollama_client import (
     ollama_supports_structured_outputs,
     parse_ollama_json_response,
 )
+from app.services.math_scene import MathSceneEngine
 from app.services.question_genome import QuestionGenomePlanner
+from app.services.question_intent import build_rescue_question, intent_contract_text
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +98,7 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
         errors.append("Question contains incomplete placeholder text")
 
     errors.extend(validate_stimulus_data(data.get("stimulus")))
+    errors.extend(MathSceneEngine().validate_scene(data))
 
     if data.get("question_type") == "multiple_choice" or "options" in data:
         options = data.get("options", [])
@@ -124,9 +127,10 @@ def validate_question_data(data: dict, standard_code: str, target_difficulty: Op
 
     if data.get("requires_diagram"):
         commands = data.get("geogebra_commands")
-        if not commands or not isinstance(commands, list) or len(commands) == 0:
-            errors.append("GeoGebra commands are required for diagram questions but were missing or empty")
-        elif not all(isinstance(cmd, str) and cmd.strip() for cmd in commands):
+        diagram_spec = data.get("diagram_spec")
+        if not diagram_spec and (not commands or not isinstance(commands, list) or len(commands) == 0):
+            errors.append("Diagram questions require either diagram_spec or geogebra_commands")
+        elif commands and not all(isinstance(cmd, str) and cmd.strip() for cmd in commands):
             errors.append("GeoGebra commands must be a list of non-empty strings")
 
     if not data.get("answer"):
@@ -394,7 +398,7 @@ class QuestionService:
         grade_level = standard.grade.level if standard.grade else "appropriate"
         applet_type = self._applet_type_for_standard(standard)
 
-        return format_prompt(
+        prompt = format_prompt(
             db=self.db,
             question_type=question_type,
             grade_level=str(grade_level),
@@ -405,6 +409,10 @@ class QuestionService:
             requires_diagram=standard.requires_diagram,
             applet_type=applet_type,
         )
+        contract = intent_contract_text(standard)
+        if contract:
+            prompt = f"{prompt}\n\n{contract}\n\nHonor this contract over broad domain instincts."
+        return prompt
 
     def _applet_type_for_standard(self, standard: Standard) -> Optional[AppletType]:
         if not standard.applet_type:
@@ -519,6 +527,10 @@ class QuestionService:
             question_data["explanation"] = sanitize_generated_text(question_data["explanation"])
         if "stimulus" in question_data:
             question_data["stimulus"] = sanitize_stimulus(question_data["stimulus"])
+        if question_data.get("math_world") in ("", []):
+            question_data["math_world"] = None
+        if question_data.get("diagram_spec") in ("", []):
+            question_data["diagram_spec"] = None
         question_data["standard_code"] = standard.code
         question_data["difficulty"] = question_data.get("difficulty", difficulty)
         question_data["question_type"] = question_type
@@ -532,8 +544,10 @@ class QuestionService:
 
         validate_question_data(question_data, standard.code, target_difficulty=difficulty)
 
-        if standard.requires_diagram and not question_data.get("geogebra_commands"):
-            raise ValueError(f"Diagram question for {standard.code} is missing required geogebra_commands")
+        if standard.requires_diagram and not (
+            question_data.get("diagram_spec") or question_data.get("geogebra_commands")
+        ):
+            raise ValueError(f"Diagram question for {standard.code} is missing diagram_spec/geogebra_commands")
 
         return question_data
 
@@ -549,6 +563,8 @@ class QuestionService:
             for part in [
                 question_data.get("question") or question_data.get("question_text") or "",
                 stimulus_to_text(question_data.get("stimulus")),
+                MathSceneEngine().scene_to_text(question_data.get("math_world")),
+                MathSceneEngine().scene_to_text(question_data.get("diagram_spec")),
             ]
             if part
         )
@@ -582,6 +598,8 @@ class QuestionService:
                 for part in [
                     existing.question_text,
                     stimulus_to_text(existing.stimulus),
+                    MathSceneEngine().scene_to_text(existing.math_world),
+                    MathSceneEngine().scene_to_text(existing.diagram_spec),
                 ]
                 if part
             )
@@ -684,6 +702,7 @@ class QuestionService:
         model: str,
         timeout: int,
         candidate_index: int = 0,
+        scene_plan: Optional[dict] = None,
         audit_callback: Optional[Callable[..., None]] = None,
     ) -> dict:
         last_error = None
@@ -694,6 +713,7 @@ class QuestionService:
             try:
                 temperature = BASE_TEMPERATURE + (attempt * TEMPERATURE_INCREMENT)
                 raw = self._call_ollama_json(active_prompt, model, timeout, temperature=temperature)
+                raw = MathSceneEngine().apply_to_candidate(raw, scene_plan)
                 question_data = self._normalize_question_data(raw, standard, difficulty, question_type)
                 self.assert_not_duplicate_question(standard.id, question_data)
                 elapsed = time.perf_counter() - started_at
@@ -835,6 +855,12 @@ class QuestionService:
         context = self._quality_context(standard, difficulty, question_type, min_review_score)
         context["question_json"] = json.dumps(question_data, default=str)
         prompt = load_prompt_template(self.db, "question_reviewer").format(**context)
+        contract = intent_contract_text(standard)
+        if contract:
+            prompt = (
+                f"{prompt}\n\n{contract}\n\n"
+                "When reviewing, reject candidates that violate forbidden task shapes even if the math is correct."
+            )
         started_at = time.perf_counter()
         review = self._call_ollama_json(prompt, model, timeout, temperature=0.15)
         elapsed = time.perf_counter() - started_at
@@ -889,6 +915,12 @@ class QuestionService:
         context["question_json"] = json.dumps(question_data, default=str)
         context["issues"] = json.dumps(issues, default=str)
         prompt = load_prompt_template(self.db, "question_repair").format(**context)
+        contract = intent_contract_text(standard)
+        if contract:
+            prompt = (
+                f"{prompt}\n\n{contract}\n\n"
+                "Repair by changing the mathematical task shape when needed, not only by editing wording."
+            )
         raw = self._call_ollama_json(prompt, model, timeout, temperature=0.25)
         repaired = self._normalize_question_data(raw, standard, difficulty, question_type)
         self.assert_not_duplicate_question(standard.id, repaired)
@@ -906,6 +938,81 @@ class QuestionService:
             notes="Repaired candidate",
         )
         return repaired
+
+    def _review_rejection_notes(self, review: dict) -> str:
+        issues = review.get("issues") if isinstance(review.get("issues"), list) else []
+        notes = review.get("improvement_notes")
+        parts = [str(issue) for issue in issues if issue]
+        if notes:
+            parts.append(str(notes))
+        return " | ".join(parts)
+
+    def _try_rescue_question(
+        self,
+        standard: Standard,
+        difficulty: float,
+        question_type: str,
+        model: str,
+        timeout: int,
+        min_review_score: float,
+        candidate_index: int,
+        audit_callback: Optional[Callable[..., None]],
+    ) -> Optional[dict[str, Any]]:
+        scene_plan = None
+        scene_engine = MathSceneEngine()
+        if scene_engine.supports(standard):
+            scene_plan = scene_engine.build_scene(standard, difficulty, candidate_index)
+            rescue = {
+                "question": scene_plan["question_goal"] if scene_plan else "",
+                "options": scene_plan["options"] if scene_plan else [],
+                "answer": scene_plan["answer"] if scene_plan else "",
+                "explanation": scene_plan["explanation"] if scene_plan else "",
+                "difficulty": difficulty,
+            }
+            rescue = scene_engine.apply_to_candidate(rescue, scene_plan)
+        else:
+            rescue = build_rescue_question(standard, difficulty, candidate_index)
+        if not rescue:
+            return None
+
+        started_at = time.perf_counter()
+        question_data = self._normalize_question_data(rescue, standard, difficulty, question_type)
+        self.assert_not_duplicate_question(standard.id, question_data)
+        elapsed = time.perf_counter() - started_at
+        self._audit(
+            audit_callback,
+            stage="rescue",
+            status="completed",
+            prompt_name="deterministic_rescue",
+            model="backend",
+            request_payload={"standard_id": standard.id, "difficulty": difficulty},
+            response_payload=question_data,
+            candidate_index=candidate_index,
+            notes=f"Built deterministic rescue candidate in {elapsed:.2f}s",
+        )
+        review = self._review_question(
+            question_data=question_data,
+            standard=standard,
+            difficulty=difficulty,
+            question_type=question_type,
+            model=model,
+            timeout=timeout,
+            min_review_score=min_review_score,
+            candidate_index=candidate_index,
+            audit_callback=audit_callback,
+        )
+        return {
+            "question": question_data,
+            "review": review,
+            "score": float(review.get("score", 0) or 0),
+            "genome": {
+                "version": 1,
+                "standard_id": standard.id,
+                "standard_code": standard.code,
+                "source": "deterministic_rescue",
+            },
+            "scene": None,
+        }
 
     def _build_planned_prompt(self, base_prompt: str, plan: dict) -> str:
         if not plan:
@@ -968,6 +1075,7 @@ class QuestionService:
 
         plan: dict = {}
         genome_planner = QuestionGenomePlanner(self.db) if custom_prompt is None else None
+        scene_engine = MathSceneEngine()
         attempts_to_review = actual_candidate_count
         if actual_quality_mode in {"fast", "reviewed"}:
             attempts_to_review = max(1, actual_max_repairs + 1)
@@ -980,6 +1088,7 @@ class QuestionService:
         started_at = time.perf_counter()
         for candidate_index in range(attempts_to_review):
             genome = None
+            scene_plan = None
             prompt = base_prompt
             if genome_planner:
                 genome = genome_planner.build_genome(
@@ -1008,6 +1117,32 @@ class QuestionService:
                         f"{genome['misconception_target']}"
                     ),
                 )
+            if custom_prompt is None and scene_engine.supports(standard):
+                scene_plan = scene_engine.build_scene(
+                    standard=standard,
+                    difficulty=actual_difficulty,
+                    attempt_index=candidate_index,
+                )
+                prompt = scene_engine.compose_prompt(prompt, scene_plan)
+                self._audit(
+                    audit_callback,
+                    stage="math_scene",
+                    status="completed",
+                    prompt_name="math_scene_engine",
+                    model=ollama_model,
+                    request_payload={
+                        "standard_id": standard.id,
+                        "difficulty": actual_difficulty,
+                        "candidate_index": candidate_index,
+                    },
+                    response_payload=scene_plan or {},
+                    candidate_index=candidate_index,
+                    notes=(
+                        scene_plan["math_world"]["type"]
+                        if scene_plan and isinstance(scene_plan.get("math_world"), dict)
+                        else None
+                    ),
+                )
             try:
                 candidate = self._generate_candidate(
                     standard=standard,
@@ -1017,6 +1152,7 @@ class QuestionService:
                     model=ollama_model,
                     timeout=actual_timeout,
                     candidate_index=candidate_index,
+                    scene_plan=scene_plan,
                     audit_callback=audit_callback,
                 )
                 review = self._review_question(
@@ -1037,25 +1173,116 @@ class QuestionService:
                         "review": review,
                         "score": float(review.get("score", 0) or 0),
                         "genome": genome,
+                        "scene": scene_plan,
                     }
                 )
                 if review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:
                     break
+                if not review.get("approved"):
+                    notes = self._review_rejection_notes(review)
+                    if notes:
+                        rejection_notes.append(notes)
+                    repaired_candidate = candidate
+                    repaired_review = review
+                    for repair_attempt in range(actual_max_repairs):
+                        try:
+                            repaired_candidate = self._repair_question(
+                                question_data=repaired_candidate,
+                                review_or_error=repaired_review,
+                                standard=standard,
+                                difficulty=actual_difficulty,
+                                question_type=question_type,
+                                model=ollama_model,
+                                timeout=actual_timeout,
+                                candidate_index=candidate_index,
+                                attempt=repair_attempt + 1,
+                                audit_callback=audit_callback,
+                            )
+                            repaired_review = self._review_question(
+                                question_data=repaired_candidate,
+                                standard=standard,
+                                difficulty=actual_difficulty,
+                                question_type=question_type,
+                                model=ollama_model,
+                                timeout=actual_timeout,
+                                min_review_score=actual_min_score,
+                                candidate_index=candidate_index,
+                                audit_callback=audit_callback,
+                            )
+                            candidates.append(
+                                {
+                                    "question": repaired_candidate,
+                                    "review": repaired_review,
+                                    "score": float(repaired_review.get("score", 0) or 0),
+                                    "genome": genome,
+                                    "scene": scene_plan,
+                                }
+                            )
+                            if repaired_review.get("approved"):
+                                break
+                            repair_notes = self._review_rejection_notes(repaired_review)
+                            if repair_notes:
+                                rejection_notes.append(repair_notes)
+                        except Exception as exc:
+                            last_error = exc
+                            rejection_notes.append(str(exc))
+                            logger.warning(
+                                "Repair attempt %s failed for %s candidate %s: %s",
+                                repair_attempt + 1,
+                                standard.code,
+                                candidate_index,
+                                exc,
+                            )
+                            break
+                    if repaired_review.get("approved") and actual_quality_mode in {"fast", "reviewed"}:
+                        break
             except Exception as exc:
                 last_error = exc
                 rejection_notes.append(str(exc))
                 logger.warning(f"Candidate {candidate_index + 1} failed for {standard.code}: {exc}")
 
+        approved = [candidate for candidate in candidates if candidate["review"].get("approved")]
+        if not approved:
+            try:
+                rescue_candidate = self._try_rescue_question(
+                    standard=standard,
+                    difficulty=actual_difficulty,
+                    question_type=question_type,
+                    model=ollama_model,
+                    timeout=actual_timeout,
+                    min_review_score=actual_min_score,
+                    candidate_index=attempts_to_review,
+                    audit_callback=audit_callback,
+                )
+                if rescue_candidate:
+                    candidates.append(rescue_candidate)
+                    if rescue_candidate["review"].get("approved"):
+                        approved.append(rescue_candidate)
+            except Exception as exc:
+                last_error = exc
+                rejection_notes.append(str(exc))
+                self._audit(
+                    audit_callback,
+                    stage="rescue",
+                    status="failed",
+                    prompt_name="deterministic_rescue",
+                    model="backend",
+                    request_payload={"standard_id": standard.id, "difficulty": actual_difficulty},
+                    response_payload={},
+                    candidate_index=attempts_to_review,
+                    notes=str(exc),
+                )
+
         if not candidates:
             raise RuntimeError(f"No valid candidates generated for {standard.code}. Last error: {last_error}")
 
-        approved = [candidate for candidate in candidates if candidate["review"].get("approved")]
         if not approved:
             best_rejected = max(candidates, key=lambda candidate: candidate["score"])
+            tail_note = rejection_notes[-1] if rejection_notes else last_error
             raise RuntimeError(
                 f"No generated question passed review for {standard.code}. "
                 f"Best score: {best_rejected['score']:.2f}. "
-                f"Notes: {best_rejected['review'].get('improvement_notes')}"
+                f"Notes: {best_rejected['review'].get('improvement_notes') or tail_note}"
             )
 
         best = max(approved, key=lambda candidate: candidate["score"])
