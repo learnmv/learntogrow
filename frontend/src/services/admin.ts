@@ -12,6 +12,9 @@ import type {
   QuestionInsightsResponse,
   SmartFillRequest,
   SmartFillResponse,
+  ClusterCoveragePlanRequest,
+  ClusterCoverageJobRequest,
+  ClusterCoveragePlanResponse,
   AdminChatRequest,
   AdminChatResponse,
 } from '../types/admin';
@@ -192,6 +195,22 @@ export async function getQuestionInsights(subjectId?: number, gradeId?: number):
  */
 export async function getSmartFillSuggestions(data: SmartFillRequest): Promise<SmartFillResponse> {
   return post<SmartFillResponse>('/admin/smart-fill-suggestions', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Preview cluster coverage generation plan
+ */
+export async function getClusterCoveragePlan(
+  data: ClusterCoveragePlanRequest
+): Promise<ClusterCoveragePlanResponse> {
+  return post<ClusterCoveragePlanResponse>('/admin/coverage-plan', data, { headers: getAuthHeaders() });
+}
+
+/**
+ * Create cluster coverage generation job
+ */
+export async function createClusterCoverageJob(data: ClusterCoverageJobRequest): Promise<GenerationJob> {
+  return post<GenerationJob>('/admin/coverage-jobs', data, { headers: getAuthHeaders() });
 }
 
 /**

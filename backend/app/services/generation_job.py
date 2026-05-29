@@ -5,7 +5,7 @@ import time
 from sqlalchemy import func
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -18,12 +18,29 @@ from app.models import (
     JobStandardStatus,
     QuestionGenerationAudit,
     Question,
+    Cluster,
+    Standard,
 )
 from app.services.questions import QuestionService
 
 logger = logging.getLogger(__name__)
 
 MAX_CONCURRENT_QUESTION_WORKERS = 15
+
+DIFFICULTY_BANDS = {
+    "easy": (0.15, 0.35, 0.25),
+    "medium": (0.35, 0.55, 0.45),
+    "hard": (0.55, 0.70, 0.62),
+    "challenge": (0.70, 0.85, 0.78),
+    "expert": (0.85, 0.95, 0.92),
+}
+
+COVERAGE_GOAL_BANDS = {
+    "fill_missing": ["easy", "medium", "hard", "challenge", "expert"],
+    "full_ladder": ["easy", "medium", "hard", "challenge", "expert"],
+    "top_up": ["easy", "medium", "hard", "challenge", "expert"],
+    "challenge_heavy": ["hard", "challenge", "expert"],
+}
 
 
 class QuestionGenerationJobService:
@@ -105,6 +122,261 @@ class QuestionGenerationJobService:
         self.db.commit()
         self.db.refresh(job)
         return job
+
+    def create_planned_job(
+        self,
+        plan_items: list[dict[str, Any]],
+        question_type: str = "multiple_choice",
+        model: Optional[str] = None,
+        timeout: int = 300,
+        quality_mode: Optional[str] = None,
+        candidate_count: Optional[int] = None,
+        max_repair_attempts: Optional[int] = None,
+        min_review_score: Optional[float] = None,
+        subject_id: Optional[int] = None,
+        grade_id: Optional[int] = None,
+        created_by: Optional[int] = None,
+    ) -> GenerationJob:
+        """Create a generation job from explicit standard+difficulty plan items."""
+        if not plan_items:
+            raise ValueError("Coverage plan has no generation items")
+
+        settings = get_settings()
+        resolved_quality_mode = quality_mode or settings.OLLAMA_QUALITY_MODE
+        if resolved_quality_mode not in {"fast", "reviewed", "quality"}:
+            resolved_quality_mode = "reviewed"
+        resolved_candidate_count = candidate_count if candidate_count is not None else settings.OLLAMA_CANDIDATE_COUNT
+        resolved_candidate_count = max(1, min(5, resolved_candidate_count))
+        if resolved_quality_mode in {"fast", "reviewed"}:
+            resolved_candidate_count = 1
+        resolved_repairs = max_repair_attempts if max_repair_attempts is not None else settings.OLLAMA_MAX_REPAIR_ATTEMPTS
+        resolved_repairs = max(0, min(3, resolved_repairs))
+        resolved_min_score = min_review_score if min_review_score is not None else settings.OLLAMA_MIN_REVIEW_SCORE
+        resolved_min_score = max(0.0, min(1.0, resolved_min_score))
+
+        job = GenerationJob(
+            status=JobStatus.PENDING.value,
+            subject_id=subject_id,
+            grade_id=grade_id,
+            total_standards=len(plan_items),
+            created_by=created_by,
+            question_type=question_type,
+            model=model,
+            timeout=timeout,
+            quality_mode=resolved_quality_mode,
+            candidate_count=resolved_candidate_count,
+            max_repair_attempts=resolved_repairs,
+            min_review_score=resolved_min_score,
+        )
+        self.db.add(job)
+        self.db.flush()
+
+        for item in plan_items:
+            job_std = GenerationJobStandard(
+                job_id=job.id,
+                standard_id=int(item["standard_id"]),
+                cluster_id=item.get("cluster_id"),
+                questions_requested=1,
+                status=JobStandardStatus.PENDING.value,
+                target_difficulty=item.get("target_difficulty"),
+                difficulty_band=item.get("difficulty_band"),
+                generation_reason=item.get("reason"),
+            )
+            self.db.add(job_std)
+
+        self.db.commit()
+        self.db.refresh(job)
+        return job
+
+    def build_cluster_coverage_plan(
+        self,
+        grade_id: int,
+        cluster_ids: list[int],
+        coverage_goal: str = "fill_missing",
+        target_per_band: int = 1,
+    ) -> dict[str, Any]:
+        """Plan cluster generation by standard and difficulty band."""
+        if coverage_goal not in COVERAGE_GOAL_BANDS:
+            coverage_goal = "fill_missing"
+        target_per_band = max(1, min(5, target_per_band))
+        clusters = (
+            self.db.query(Cluster)
+            .filter(Cluster.grade_id == grade_id, Cluster.id.in_(cluster_ids))
+            .order_by(Cluster.code)
+            .all()
+        )
+        if not clusters:
+            raise ValueError("No clusters found for the selected grade")
+
+        standards = (
+            self.db.query(Standard)
+            .filter(
+                Standard.grade_id == grade_id,
+                Standard.cluster_id.in_([cluster.id for cluster in clusters]),
+            )
+            .order_by(Standard.code)
+            .all()
+        )
+        if not standards:
+            raise ValueError("No standards found for the selected clusters")
+
+        cluster_map = {cluster.id: cluster for cluster in clusters}
+        items: list[dict[str, Any]] = []
+        standards_report: list[dict[str, Any]] = []
+        filled_cells = 0
+        total_cells = 0
+        bands = COVERAGE_GOAL_BANDS[coverage_goal]
+
+        for standard in standards:
+            band_counts = self._question_counts_by_band(standard.id)
+            missing_bands = []
+            for band in DIFFICULTY_BANDS:
+                total_cells += 1
+                if band_counts.get(band, 0) > 0:
+                    filled_cells += 1
+            for band in bands:
+                existing = band_counts.get(band, 0)
+                desired = target_per_band
+                should_generate = False
+                if coverage_goal == "full_ladder":
+                    should_generate = True
+                    desired = 1
+                elif coverage_goal in {"fill_missing", "challenge_heavy"}:
+                    should_generate = existing == 0
+                    desired = 1
+                elif coverage_goal == "top_up":
+                    should_generate = existing < target_per_band
+
+                if should_generate:
+                    needed = max(1, desired - existing) if coverage_goal == "top_up" else 1
+                    missing_bands.append(band)
+                    for _ in range(needed):
+                        target = self._target_for_band(standard, band)
+                        cluster = cluster_map.get(standard.cluster_id)
+                        items.append(
+                            {
+                                "standard_id": standard.id,
+                                "standard_code": standard.code,
+                                "standard_description": standard.description,
+                                "cluster_id": standard.cluster_id,
+                                "cluster_code": cluster.code if cluster else None,
+                                "cluster_name": cluster.name if cluster else None,
+                                "difficulty_band": band,
+                                "target_difficulty": target,
+                                "existing_count": existing,
+                                "reason": self._coverage_reason(coverage_goal, band, existing, target_per_band),
+                            }
+                        )
+
+            cluster = cluster_map.get(standard.cluster_id)
+            standards_report.append(
+                {
+                    "standard_id": standard.id,
+                    "standard_code": standard.code,
+                    "standard_description": standard.description,
+                    "cluster_id": standard.cluster_id,
+                    "cluster_code": cluster.code if cluster else None,
+                    "cluster_name": cluster.name if cluster else None,
+                    "band_counts": band_counts,
+                    "planned_bands": missing_bands,
+                    "planned_count": sum(1 for item in items if item["standard_id"] == standard.id),
+                }
+            )
+
+        cluster_reports = []
+        for cluster in clusters:
+            cluster_standards = [
+                report for report in standards_report if report["cluster_id"] == cluster.id
+            ]
+            planned_count = sum(report["planned_count"] for report in cluster_standards)
+            cluster_reports.append(
+                {
+                    "cluster_id": cluster.id,
+                    "cluster_code": cluster.code,
+                    "cluster_name": cluster.name,
+                    "standard_count": len(cluster_standards),
+                    "planned_count": planned_count,
+                }
+            )
+
+        coverage_before = round((filled_cells / total_cells) * 100, 1) if total_cells else 0
+        projected_filled = min(total_cells, filled_cells + len({
+            (item["standard_id"], item["difficulty_band"]) for item in items
+        }))
+        coverage_after = round((projected_filled / total_cells) * 100, 1) if total_cells else 0
+        return {
+            "coverage_goal": coverage_goal,
+            "grade_id": grade_id,
+            "cluster_ids": [cluster.id for cluster in clusters],
+            "difficulty_bands": [
+                {
+                    "band": band,
+                    "min": DIFFICULTY_BANDS[band][0],
+                    "max": DIFFICULTY_BANDS[band][1],
+                    "target": DIFFICULTY_BANDS[band][2],
+                }
+                for band in DIFFICULTY_BANDS
+            ],
+            "coverage_before": coverage_before,
+            "coverage_after": coverage_after,
+            "total_planned": len(items),
+            "estimated_generation_time": self._estimate_generation_time(len(items)),
+            "clusters": cluster_reports,
+            "standards": standards_report,
+            "items": items,
+        }
+
+    def _question_counts_by_band(self, standard_id: int) -> dict[str, int]:
+        rows = (
+            self.db.query(Question.difficulty, func.count(Question.id))
+            .filter(Question.standard_id == standard_id, Question.is_active == True)
+            .group_by(Question.difficulty)
+            .all()
+        )
+        counts = {band: 0 for band in DIFFICULTY_BANDS}
+        for difficulty, count in rows:
+            band = self._band_for_difficulty(float(difficulty or 0.5))
+            counts[band] += int(count or 0)
+        return counts
+
+    def _band_for_difficulty(self, difficulty: float) -> str:
+        for band, (low, high, _) in DIFFICULTY_BANDS.items():
+            if low <= difficulty < high or (band == "expert" and difficulty <= high):
+                return band
+        if difficulty < 0.15:
+            return "easy"
+        return "expert"
+
+    def _target_for_band(self, standard: Standard, band: str) -> float:
+        target = DIFFICULTY_BANDS[band][2]
+        base = float(standard.difficulty_base or target)
+        if band == "easy":
+            target = min(target, max(0.15, base - 0.25))
+        elif band == "medium":
+            target = min(max(target, base - 0.10), base + 0.05)
+        elif band == "hard":
+            target = max(target, base + 0.10)
+        elif band == "challenge":
+            target = max(target, base + 0.25)
+        elif band == "expert":
+            target = max(target, base + 0.35)
+        return round(max(0.05, min(0.95, target)), 2)
+
+    def _coverage_reason(self, goal: str, band: str, existing: int, target_per_band: int) -> str:
+        if goal == "full_ladder":
+            return f"Full ladder requested: add one {band} question"
+        if goal == "top_up":
+            return f"{band.title()} band has {existing}; target is {target_per_band}"
+        if goal == "challenge_heavy":
+            return f"Challenge-heavy coverage missing {band} band"
+        return f"No active {band} questions exist for this standard"
+
+    def _estimate_generation_time(self, item_count: int) -> str:
+        if item_count <= 0:
+            return "No generation needed"
+        low_minutes = max(1, round(item_count * 0.4))
+        high_minutes = max(low_minutes, round(item_count * 0.9))
+        return f"{low_minutes}-{high_minutes} min"
 
     def get_job(self, job_id: int) -> Optional[GenerationJob]:
         """Fetch a job with its per-standard progress loaded."""
@@ -471,7 +743,10 @@ class QuestionGenerationJobService:
                 if standard and standard.difficulty_base is not None
                 else 0.5
             )
-            difficulties = service._compute_difficulty_spread(base_difficulty, job_std.questions_requested)
+            if job_std.target_difficulty is not None:
+                difficulties = [float(job_std.target_difficulty)] * job_std.questions_requested
+            else:
+                difficulties = service._compute_difficulty_spread(base_difficulty, job_std.questions_requested)
             for question_index, target_difficulty in enumerate(difficulties):
                 question_work.append((job_std.id, job_std.standard_id, target_difficulty, question_index))
 

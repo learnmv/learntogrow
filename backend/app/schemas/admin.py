@@ -131,6 +131,80 @@ class SmartFillResponse(BaseModel):
     estimated_generation_time: str
 
 
+class ClusterCoveragePlanRequest(BaseModel):
+    """Request a coverage plan for selected clusters."""
+    subject_id: int
+    grade_id: int
+    cluster_ids: List[int] = Field(..., min_length=1)
+    coverage_goal: str = Field("fill_missing", pattern="^(fill_missing|full_ladder|top_up|challenge_heavy)$")
+    target_per_band: int = Field(1, ge=1, le=5)
+
+
+class ClusterCoverageJobRequest(ClusterCoveragePlanRequest):
+    """Create a generation job from a cluster coverage plan."""
+    question_type: str = Field("multiple_choice", pattern="^(multiple_choice|open_ended)$")
+    model: Optional[str] = Field(None)
+    timeout: int = Field(300, ge=30, le=600)
+    quality_mode: str = Field("reviewed", pattern="^(fast|reviewed|quality)$")
+    candidate_count: int = Field(1, ge=1, le=5)
+    max_repair_attempts: int = Field(1, ge=0, le=3)
+    min_review_score: float = Field(0.75, ge=0, le=1)
+
+
+class DifficultyBandInfo(BaseModel):
+    band: str
+    min: float
+    max: float
+    target: float
+
+
+class ClusterCoveragePlanItem(BaseModel):
+    standard_id: int
+    standard_code: str
+    standard_description: str
+    cluster_id: int
+    cluster_code: Optional[str] = None
+    cluster_name: Optional[str] = None
+    difficulty_band: str
+    target_difficulty: float
+    existing_count: int
+    reason: str
+
+
+class ClusterCoverageStandardReport(BaseModel):
+    standard_id: int
+    standard_code: str
+    standard_description: str
+    cluster_id: int
+    cluster_code: Optional[str] = None
+    cluster_name: Optional[str] = None
+    band_counts: dict
+    planned_bands: List[str]
+    planned_count: int
+
+
+class ClusterCoverageClusterReport(BaseModel):
+    cluster_id: int
+    cluster_code: str
+    cluster_name: str
+    standard_count: int
+    planned_count: int
+
+
+class ClusterCoveragePlanResponse(BaseModel):
+    coverage_goal: str
+    grade_id: int
+    cluster_ids: List[int]
+    difficulty_bands: List[DifficultyBandInfo]
+    coverage_before: float
+    coverage_after: float
+    total_planned: int
+    estimated_generation_time: str
+    clusters: List[ClusterCoverageClusterReport]
+    standards: List[ClusterCoverageStandardReport]
+    items: List[ClusterCoveragePlanItem]
+
+
 class AdminChatMessage(BaseModel):
     """Single message in the admin model chat."""
     role: str = Field(..., pattern="^(system|user|assistant)$")

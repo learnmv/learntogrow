@@ -33,6 +33,10 @@ export interface GenerationJobStandard {
   id: number;
   standard_id: number;
   standard_code?: string | null;
+  cluster_id?: number | null;
+  target_difficulty?: number | null;
+  difficulty_band?: string | null;
+  generation_reason?: string | null;
   questions_requested: number;
   questions_created: number;
   status: JobStandardStatus;
@@ -163,6 +167,80 @@ export interface SmartFillResponse {
   suggestions: SmartFillSuggestion[];
   total_suggested: number;
   estimated_generation_time: string;
+}
+
+export type CoverageGoal = 'fill_missing' | 'full_ladder' | 'top_up' | 'challenge_heavy';
+
+export interface ClusterCoveragePlanRequest {
+  subject_id: number;
+  grade_id: number;
+  cluster_ids: number[];
+  coverage_goal: CoverageGoal;
+  target_per_band: number;
+}
+
+export interface ClusterCoverageJobRequest extends ClusterCoveragePlanRequest {
+  question_type?: 'multiple_choice' | 'open_ended';
+  model?: string;
+  timeout?: number;
+  quality_mode?: 'reviewed' | 'quality';
+  candidate_count?: number;
+  max_repair_attempts?: number;
+  min_review_score?: number;
+}
+
+export interface DifficultyBandInfo {
+  band: string;
+  min: number;
+  max: number;
+  target: number;
+}
+
+export interface ClusterCoveragePlanItem {
+  standard_id: number;
+  standard_code: string;
+  standard_description: string;
+  cluster_id: number;
+  cluster_code?: string | null;
+  cluster_name?: string | null;
+  difficulty_band: string;
+  target_difficulty: number;
+  existing_count: number;
+  reason: string;
+}
+
+export interface ClusterCoverageStandardReport {
+  standard_id: number;
+  standard_code: string;
+  standard_description: string;
+  cluster_id: number;
+  cluster_code?: string | null;
+  cluster_name?: string | null;
+  band_counts: Record<string, number>;
+  planned_bands: string[];
+  planned_count: number;
+}
+
+export interface ClusterCoverageClusterReport {
+  cluster_id: number;
+  cluster_code: string;
+  cluster_name: string;
+  standard_count: number;
+  planned_count: number;
+}
+
+export interface ClusterCoveragePlanResponse {
+  coverage_goal: CoverageGoal;
+  grade_id: number;
+  cluster_ids: number[];
+  difficulty_bands: DifficultyBandInfo[];
+  coverage_before: number;
+  coverage_after: number;
+  total_planned: number;
+  estimated_generation_time: string;
+  clusters: ClusterCoverageClusterReport[];
+  standards: ClusterCoverageStandardReport[];
+  items: ClusterCoveragePlanItem[];
 }
 
 export interface AdminChatMessage {

@@ -31,6 +31,7 @@ export async function fetchClusters(filters?: HierarchyFilter): Promise<Cluster[
   const params = new URLSearchParams()
   if (filters?.domain_id) params.append('domain_id', filters.domain_id.toString())
   if (filters?.subject_id) params.append('subject_id', filters.subject_id.toString())
+  if (filters?.grade_id) params.append('grade_id', filters.grade_id.toString())
 
   const query = params.toString() ? `?${params.toString()}` : ''
   return get<Cluster[]>(`/clusters${query}`)

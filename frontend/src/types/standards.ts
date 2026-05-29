@@ -22,8 +22,10 @@ export interface Domain {
 export interface Cluster {
   id: number
   domain_id: number
+  grade_id: number
   code: string
-  description: string
+  name: string
+  description?: string
 }
 
 export interface Standard {

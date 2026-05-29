@@ -18,6 +18,9 @@ from app.schemas.admin import (
     AdminDashboardStats,
     BulkDeleteRequest,
     SmartFillRequest,
+    ClusterCoveragePlanRequest,
+    ClusterCoverageJobRequest,
+    ClusterCoveragePlanResponse,
     AdminChatRequest,
     AdminChatResponse,
 )
@@ -436,6 +439,82 @@ def create_generation_job(
         min_review_score=float(job.min_review_score),
     )
 
+    return job
+
+
+@router.post("/coverage-plan", response_model=ClusterCoveragePlanResponse)
+def create_cluster_coverage_plan(
+    request: ClusterCoveragePlanRequest,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db),
+):
+    """Preview a cluster coverage plan before creating a generation job."""
+    service = QuestionGenerationJobService(db)
+    try:
+        return service.build_cluster_coverage_plan(
+            grade_id=request.grade_id,
+            cluster_ids=request.cluster_ids,
+            coverage_goal=request.coverage_goal,
+            target_per_band=request.target_per_band,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+
+@router.post("/coverage-jobs", response_model=GenerationJobResponse, status_code=status.HTTP_201_CREATED)
+def create_cluster_coverage_job(
+    request: ClusterCoverageJobRequest,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(require_role(["admin"])),
+    db: Session = Depends(get_db),
+):
+    """Create a generation job from an explicit cluster coverage plan."""
+    service = QuestionGenerationJobService(db)
+    try:
+        plan = service.build_cluster_coverage_plan(
+            grade_id=request.grade_id,
+            cluster_ids=request.cluster_ids,
+            coverage_goal=request.coverage_goal,
+            target_per_band=request.target_per_band,
+        )
+        if not plan["items"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Selected clusters already satisfy this coverage goal",
+            )
+        job = service.create_planned_job(
+            plan_items=plan["items"],
+            question_type=request.question_type,
+            model=request.model,
+            timeout=request.timeout,
+            quality_mode=request.quality_mode,
+            candidate_count=request.candidate_count,
+            max_repair_attempts=request.max_repair_attempts,
+            min_review_score=request.min_review_score,
+            subject_id=request.subject_id,
+            grade_id=request.grade_id,
+            created_by=current_user.get("user_id"),
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+
+    background_tasks.add_task(
+        QuestionGenerationJobService.run_job,
+        job_id=job.id,
+        question_type=job.question_type or "multiple_choice",
+        model=job.model,
+        timeout=job.timeout or 300,
+        quality_mode=job.quality_mode,
+        candidate_count=job.candidate_count,
+        max_repair_attempts=job.max_repair_attempts,
+        min_review_score=float(job.min_review_score or 0.75),
+    )
     return job
 
 

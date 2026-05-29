@@ -13,6 +13,10 @@ class GenerationJobStandardResponse(BaseModel):
     id: int
     standard_id: int
     standard_code: Optional[str] = None
+    cluster_id: Optional[int] = None
+    target_difficulty: Optional[float] = None
+    difficulty_band: Optional[str] = None
+    generation_reason: Optional[str] = None
     questions_requested: int = 1
     questions_created: int = 0
     status: str = JobStandardStatus.PENDING.value
