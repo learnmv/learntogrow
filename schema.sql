@@ -155,14 +155,17 @@ CREATE TABLE generation_job_standards (
     id SERIAL PRIMARY KEY,
     job_id INTEGER REFERENCES generation_jobs(id) ON DELETE CASCADE,
     standard_id INTEGER REFERENCES standards(id) ON DELETE CASCADE,
+    cluster_id INTEGER REFERENCES clusters(id) ON DELETE SET NULL,
     questions_requested INTEGER NOT NULL DEFAULT 1,
     questions_created INTEGER NOT NULL DEFAULT 0,
     status VARCHAR(20) DEFAULT 'pending'
         CHECK (status IN ('pending', 'running', 'done', 'failed')),
     error TEXT,
+    target_difficulty NUMERIC(4,3),
+    difficulty_band VARCHAR(20),
+    generation_reason TEXT,
     started_at TIMESTAMP,
-    completed_at TIMESTAMP,
-    UNIQUE(job_id, standard_id)
+    completed_at TIMESTAMP
 );
 
 CREATE TABLE question_generation_audits (
@@ -224,7 +227,10 @@ CREATE INDEX idx_questions_active ON questions(is_active);
 CREATE INDEX idx_generation_jobs_status ON generation_jobs(status);
 CREATE INDEX idx_generation_jobs_created_by ON generation_jobs(created_by);
 CREATE INDEX idx_generation_job_standards_job_id ON generation_job_standards(job_id);
+CREATE INDEX idx_generation_job_standards_job_standard ON generation_job_standards(job_id, standard_id);
 CREATE INDEX idx_generation_job_standards_status ON generation_job_standards(status);
+CREATE INDEX idx_generation_job_standards_cluster ON generation_job_standards(cluster_id);
+CREATE INDEX idx_generation_job_standards_difficulty_band ON generation_job_standards(difficulty_band);
 CREATE INDEX idx_question_generation_audits_job ON question_generation_audits(job_id, created_at);
 CREATE INDEX idx_question_generation_audits_job_standard ON question_generation_audits(job_standard_id, created_at);
 CREATE INDEX idx_question_generation_audits_standard ON question_generation_audits(standard_id, created_at);

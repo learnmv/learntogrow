@@ -80,10 +80,14 @@ class GenerationJobStandard(Base):
     id = Column(Integer, primary_key=True)
     job_id = Column(Integer, ForeignKey("generation_jobs.id", ondelete="CASCADE"), nullable=False)
     standard_id = Column(Integer, ForeignKey("standards.id", ondelete="CASCADE"), nullable=False)
+    cluster_id = Column(Integer, ForeignKey("clusters.id", ondelete="SET NULL"))
     questions_requested = Column(Integer, nullable=False, default=1)
     questions_created = Column(Integer, nullable=False, default=0)
     status = Column(String(20), default=JobStandardStatus.PENDING.value)
     error = Column(Text)
+    target_difficulty = Column(Numeric(4, 3))
+    difficulty_band = Column(String(20))
+    generation_reason = Column(Text)
 
     @property
     def standard_code(self) -> Optional[str]:
@@ -133,6 +137,7 @@ class GenerationJobStandard(Base):
     # Relationships
     job = relationship("GenerationJob", back_populates="job_standards")
     standard = relationship("Standard", lazy="joined")
+    cluster = relationship("Cluster", lazy="joined")
     quality_audits = relationship(
         "QuestionGenerationAudit",
         back_populates="job_standard",

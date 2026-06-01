@@ -7,19 +7,23 @@ import {
 import { toast } from 'sonner';
 import {
   createGenerationJob,
+  createClusterCoverageJob,
+  getClusterCoveragePlan,
   getGenerationJob,
   listGenerationJobs,
   retryFailedStandards,
   cancelGenerationJob,
   getSmartFillSuggestions,
 } from '../../services/admin';
-import { fetchSubjects, fetchGradesBySubject, fetchStandards } from '../../services/standards';
-import type { Subject, Grade, Standard } from '../../types/standards';
+import { fetchSubjects, fetchGradesBySubject, fetchStandards, fetchClusters } from '../../services/standards';
+import type { Subject, Grade, Standard, Cluster } from '../../types/standards';
 import type {
   GenerationJob,
   CreateGenerationJobRequest,
   SmartFillRequest,
   SmartFillSuggestion,
+  CoverageGoal,
+  ClusterCoveragePlanResponse,
 } from '../../types/admin';
 
 type GenMode =
@@ -28,7 +32,8 @@ type GenMode =
   | 'smart-struggling'
   | 'smart-balanced'
   | 'smart-difficulty'
-  | 'smart-diagrams';
+  | 'smart-diagrams'
+  | 'coverage';
 type QualityMode = 'reviewed' | 'quality';
 type DisplayStandard = Pick<Standard, 'id' | 'code' | 'description'>;
 
@@ -45,14 +50,18 @@ export function QuestionGenerationPanel() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [standards, setStandards] = useState<Standard[]>([]);
+  const [clusters, setClusters] = useState<Cluster[]>([]);
 
   const [selectedSubject, setSelectedSubject] = useState<number | ''>('');
   const [selectedGrade, setSelectedGrade] = useState<number | ''>('');
   const [selectedStandards, setSelectedStandards] = useState<number[]>([]);
+  const [selectedClusters, setSelectedClusters] = useState<number[]>([]);
 
   // -- Settings --
   const [mode, setMode] = useState<GenMode>('custom');
   const [questionsPerStandard, setQuestionsPerStandard] = useState(1);
+  const [coverageGoal, setCoverageGoal] = useState<CoverageGoal>('fill_missing');
+  const [targetPerBand, setTargetPerBand] = useState(1);
   const [questionType, setQuestionType] = useState<'multiple_choice' | 'open_ended'>('multiple_choice');
   const [timeout, setTimeout] = useState(300);
   const [qualityMode, setQualityMode] = useState<QualityMode>('reviewed');
@@ -68,6 +77,8 @@ export function QuestionGenerationPanel() {
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<SmartFillSuggestion[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [coveragePlan, setCoveragePlan] = useState<ClusterCoveragePlanResponse | null>(null);
+  const [coverageLoading, setCoverageLoading] = useState(false);
 
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const displayStandards: DisplayStandard[] = mode === 'custom'
@@ -90,7 +101,10 @@ export function QuestionGenerationPanel() {
       fetchGradesBySubject(selectedSubject).then(setGrades).catch(console.error);
       setSelectedGrade('');
       setSelectedStandards([]);
+      setSelectedClusters([]);
       setStandards([]);
+      setClusters([]);
+      setCoveragePlan(null);
     }
   }, [selectedSubject]);
 
@@ -100,6 +114,11 @@ export function QuestionGenerationPanel() {
       fetchStandards({ subject_id: selectedSubject, grade_id: selectedGrade })
         .then(setStandards)
         .catch(console.error);
+      fetchClusters({ subject_id: selectedSubject, grade_id: selectedGrade })
+        .then(setClusters)
+        .catch(console.error);
+      setSelectedClusters([]);
+      setCoveragePlan(null);
     }
   }, [selectedSubject, selectedGrade]);
 
@@ -129,9 +148,20 @@ export function QuestionGenerationPanel() {
       loadSuggestions();
     } else {
       setSuggestions([]);
-      setSelectedStandards([]);
+      if (mode !== 'coverage') {
+        setSelectedStandards([]);
+      }
     }
   }, [loadSuggestions, mode, selectedSubject]);
+
+  useEffect(() => {
+    if (mode === 'coverage' && selectedSubject && selectedGrade && selectedClusters.length > 0) {
+      previewCoveragePlan();
+    } else if (mode !== 'coverage') {
+      setCoveragePlan(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [coverageGoal, targetPerBand, mode, selectedSubject, selectedGrade, selectedClusters.join(',')]);
 
   async function loadRecentJobs() {
     try {
@@ -194,10 +224,82 @@ export function QuestionGenerationPanel() {
     setSelectedStandards([]);
   }
 
+  function toggleCluster(id: number) {
+    setSelectedClusters((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+    setCoveragePlan(null);
+  }
+
+  async function previewCoveragePlan(clusterIds = selectedClusters) {
+    if (!selectedSubject || !selectedGrade || clusterIds.length === 0) {
+      setCoveragePlan(null);
+      return null;
+    }
+    setCoverageLoading(true);
+    try {
+      const plan = await getClusterCoveragePlan({
+        subject_id: Number(selectedSubject),
+        grade_id: Number(selectedGrade),
+        cluster_ids: clusterIds,
+        coverage_goal: coverageGoal,
+        target_per_band: targetPerBand,
+      });
+      setCoveragePlan(plan);
+      return plan;
+    } catch (err: unknown) {
+      toast.error('Failed to build coverage plan', { description: getErrorMessage(err) });
+      return null;
+    } finally {
+      setCoverageLoading(false);
+    }
+  }
+
   // -- Submit --
   async function handleStart() {
     if (!selectedSubject || !selectedGrade) {
       toast.error('Please select a subject and grade');
+      return;
+    }
+
+    if (mode === 'coverage') {
+      if (selectedClusters.length === 0) {
+        toast.error('Please select at least one cluster');
+        return;
+      }
+      setLoading(true);
+      try {
+        const plan = coveragePlan ?? await previewCoveragePlan();
+        if (!plan || plan.total_planned === 0) {
+          toast.error('No coverage gaps to generate', {
+            description: 'Try Full Ladder or Top Up if you want more questions anyway.',
+          });
+          return;
+        }
+        const job = await createClusterCoverageJob({
+          subject_id: Number(selectedSubject),
+          grade_id: Number(selectedGrade),
+          cluster_ids: selectedClusters,
+          coverage_goal: coverageGoal,
+          target_per_band: targetPerBand,
+          question_type: questionType,
+          timeout,
+          quality_mode: qualityMode,
+          candidate_count: qualityMode === 'quality' ? candidateCount : 1,
+          max_repair_attempts: repairAttempts,
+          min_review_score: minReviewScore,
+        });
+        setActiveJob(job);
+        setRecentJobs((prev) => [job, ...prev].slice(0, 10));
+        toast.success('Coverage generation started', {
+          description: `Job #${job.id}: ${job.total_standards} planned questions queued`,
+        });
+        startPolling(job.id);
+      } catch (err: unknown) {
+        toast.error('Failed to start coverage generation', { description: getErrorMessage(err) });
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -276,6 +378,7 @@ export function QuestionGenerationPanel() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {[
               { key: 'custom' as GenMode, label: 'Custom', icon: Box },
+              { key: 'coverage' as GenMode, label: 'Coverage', icon: ShieldCheck },
               { key: 'smart-gaps' as GenMode, label: 'Fill Gaps', icon: Zap },
               { key: 'smart-struggling' as GenMode, label: 'Struggling', icon: AlertCircle },
               { key: 'smart-balanced' as GenMode, label: 'Balanced', icon: List },
@@ -332,7 +435,67 @@ export function QuestionGenerationPanel() {
           </div>
         </div>
 
+        {mode === 'coverage' && (
+          <div className="bg-surface-elevated rounded-2xl p-5 shadow-sm border border-border">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-display font-semibold text-text">
+                Clusters ({selectedClusters.length} selected)
+              </h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const ids = clusters.map((c) => c.id);
+                    setSelectedClusters(ids);
+                    setCoveragePlan(null);
+                  }}
+                  className="text-xs text-sage-600 hover:text-sage-700 font-medium"
+                >
+                  Select all
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedClusters([]);
+                    setCoveragePlan(null);
+                  }}
+                  className="text-xs text-text-muted hover:text-text font-medium"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {clusters.length === 0 ? (
+              <div className="text-center py-8 text-text-muted text-sm">
+                Select a subject and grade to load clusters.
+              </div>
+            ) : (
+              <div className="max-h-56 overflow-y-auto border border-border rounded-xl">
+                <div className="divide-y divide-border">
+                  {clusters.map((cluster) => (
+                    <label
+                      key={cluster.id}
+                      className="flex items-center gap-3 p-3 hover:bg-sage-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedClusters.includes(cluster.id)}
+                        onChange={() => toggleCluster(cluster.id)}
+                        className="w-4 h-4 text-sage-600 rounded border-border focus:ring-sage-500"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium text-text">{cluster.code}</span>
+                        <p className="text-xs text-text-muted truncate">{cluster.name}</p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Standards selection */}
+        {mode !== 'coverage' && (
         <div className="bg-surface-elevated rounded-2xl p-5 shadow-sm border border-border">
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-display font-semibold text-text">
@@ -393,20 +556,112 @@ export function QuestionGenerationPanel() {
             </div>
           )}
         </div>
+        )}
+
+        {mode === 'coverage' && (
+          <div className="bg-surface-elevated rounded-2xl p-5 shadow-sm border border-border space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-display font-semibold text-text">Coverage Plan</h3>
+                <p className="text-xs text-text-muted mt-1">
+                  Build an even easy-to-expert ladder across selected clusters.
+                </p>
+              </div>
+              <button
+                onClick={() => previewCoveragePlan()}
+                disabled={coverageLoading || selectedClusters.length === 0}
+                className="px-3 py-2 rounded-xl bg-sage-600 text-white text-xs font-medium disabled:opacity-50 flex items-center gap-1"
+              >
+                {coverageLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+                Preview
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-text-muted mb-1.5">Coverage Goal</label>
+                <select
+                  value={coverageGoal}
+                  onChange={(e) => setCoverageGoal(e.target.value as CoverageGoal)}
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
+                >
+                  <option value="fill_missing">Fill Missing Bands</option>
+                  <option value="full_ladder">Add Full Ladder</option>
+                  <option value="top_up">Top Up Each Band</option>
+                  <option value="challenge_heavy">Challenge Heavy</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-text-muted mb-1.5">Target Per Band</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={targetPerBand}
+                  disabled={coverageGoal !== 'top_up'}
+                  onChange={(e) => setTargetPerBand(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500 disabled:opacity-50"
+                />
+              </div>
+            </div>
+
+            {coveragePlan && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div className="rounded-xl bg-surface-muted px-3 py-2">
+                    <div className="text-text-subtle">Before</div>
+                    <div className="font-medium text-text">{coveragePlan.coverage_before}%</div>
+                  </div>
+                  <div className="rounded-xl bg-surface-muted px-3 py-2">
+                    <div className="text-text-subtle">After</div>
+                    <div className="font-medium text-text">{coveragePlan.coverage_after}%</div>
+                  </div>
+                  <div className="rounded-xl bg-surface-muted px-3 py-2">
+                    <div className="text-text-subtle">Planned</div>
+                    <div className="font-medium text-text">{coveragePlan.total_planned}</div>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-border overflow-hidden">
+                  <div className="max-h-48 overflow-y-auto divide-y divide-border">
+                    {coveragePlan.clusters.map((cluster) => (
+                      <div key={cluster.cluster_id} className="p-3 text-xs">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="font-medium text-text">{cluster.cluster_code}</span>
+                          <span className="text-sage-700">{cluster.planned_count} planned</span>
+                        </div>
+                        <p className="text-text-muted truncate mt-0.5">{cluster.cluster_name}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {coveragePlan.total_planned === 0 && (
+                  <p className="text-xs text-text-muted">
+                    These clusters already satisfy the selected goal.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Settings */}
         <div className="bg-surface-elevated rounded-2xl p-5 shadow-sm border border-border">
           <h3 className="text-sm font-display font-semibold text-text mb-3">Settings</h3>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
-              <label className="block text-sm text-text-muted mb-1.5">Per Standard</label>
+              <label className="block text-sm text-text-muted mb-1.5">
+                {mode === 'coverage' ? 'Per Planned Cell' : 'Per Standard'}
+              </label>
               <input
                 type="number"
                 min={1}
                 max={10}
                 value={questionsPerStandard}
+                disabled={mode === 'coverage'}
                 onChange={(e) => setQuestionsPerStandard(Number(e.target.value))}
-                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500"
+                className="w-full px-3 py-2 border border-border rounded-xl bg-surface text-sm focus:ring-2 focus:ring-sage-500 disabled:opacity-50"
               />
             </div>
             <div>
@@ -574,7 +829,12 @@ export function QuestionGenerationPanel() {
                       {js.status === 'failed' && <AlertCircle className="w-3.5 h-3.5 text-coral-500 shrink-0" />}
                       {js.status === 'running' && <Loader2 className="w-3.5 h-3.5 text-sage-500 animate-spin shrink-0" />}
                       {js.status === 'pending' && <Clock className="w-3.5 h-3.5 text-text-subtle shrink-0" />}
-                      <span className="text-text-muted">{js.standard_code ?? `Standard ${js.standard_id}`}</span>
+                      <span className="text-text-muted">
+                        {js.standard_code ?? `Standard ${js.standard_id}`}
+                        {js.difficulty_band && (
+                          <span className="ml-1 text-text-subtle">({js.difficulty_band})</span>
+                        )}
+                      </span>
                       {js.avg_quality_score !== null && js.avg_quality_score !== undefined && (
                         <span className="ml-auto inline-flex items-center gap-1 text-sage-700">
                           <ShieldCheck className="w-3 h-3" />
