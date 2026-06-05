@@ -2,8 +2,6 @@ from pydantic import BaseModel, Field
 from typing import Any, Optional, List
 from datetime import datetime
 
-from app.prompts import AppletType
-
 
 class QuestionGenerateRequest(BaseModel):
     """Request body for generating a question."""
@@ -46,27 +44,7 @@ class QuestionContent(BaseModel):
         None,
         description="Optional structured stimulus such as a table"
     )
-    math_world: Optional[dict[str, Any]] = Field(
-        None,
-        description="Machine-verifiable math world used to generate visual questions"
-    )
-    diagram_spec: Optional[dict[str, Any]] = Field(
-        None,
-        description="Structured diagram scene for native rendering"
-    )
     question_type: str = Field(..., description="Type of question")
-    requires_diagram: bool = Field(
-        False,
-        description="Whether this question includes a GeoGebra diagram"
-    )
-    applet_type: Optional[AppletType] = Field(
-        None,
-        description="GeoGebra applet type if requires_diagram is True"
-    )
-    geogebra_commands: Optional[List[str]] = Field(
-        None,
-        description="GeoGebra commands to create the diagram"
-    )
 
 
 class QuestionResponse(QuestionContent):
@@ -107,7 +85,5 @@ class QuestionEditRequest(BaseModel):
     correct_answer: Optional[str] = Field(None, description="The correct answer")
     explanation: Optional[str] = Field(None, description="Explanation of the answer")
     stimulus: Optional[dict[str, Any]] = Field(None, description="Optional structured stimulus")
-    math_world: Optional[dict[str, Any]] = Field(None, description="Optional math world")
-    diagram_spec: Optional[dict[str, Any]] = Field(None, description="Optional structured diagram scene")
     difficulty: Optional[float] = Field(None, ge=0, le=1, description="Difficulty level (0-1)")
     is_active: Optional[bool] = Field(None, description="Whether question is active")

@@ -211,7 +211,6 @@ class AdminService:
         domain_ids: Optional[List[int]] = None,
         difficulty_min: Optional[float] = None,
         difficulty_max: Optional[float] = None,
-        only_diagram_questions: bool = False
     ) -> List[Standard]:
         """Get standards matching generation criteria."""
         query = self.db.query(Standard)
@@ -226,8 +225,6 @@ class AdminService:
             query = query.filter(Standard.difficulty_base >= difficulty_min)
         if difficulty_max is not None:
             query = query.filter(Standard.difficulty_base <= difficulty_max)
-        if only_diagram_questions:
-            query = query.filter(Standard.requires_diagram == True)
 
         return query.all()
 
@@ -334,7 +331,6 @@ class AdminService:
             )
             question_count = question_query.count()
             active_question_count = question_query.filter(Question.is_active == True).count()
-            diagram_question_count = question_query.filter(Question.requires_diagram == True).count()
             difficulty_values = [
                 float(row[0])
                 for row in self.db.query(Question.difficulty)
@@ -407,11 +403,6 @@ class AdminService:
                     else:
                         suggested_difficulty = 0.55
                     suggested_count = min(3, len(missing))
-            elif fill_mode == "diagrams":
-                if standard.requires_diagram and diagram_question_count == 0:
-                    reason = f"Needs GeoGebra-backed diagram question for {standard.code}"
-                    suggested_count = 1
-
             if reason:
                 suggestions.append({
                     "standard_id": standard.id,
@@ -423,12 +414,11 @@ class AdminService:
                     "suggested_count": suggested_count,
                 })
 
-        # Sort: gaps first, then struggling, then missing difficulty/diagram coverage.
+        # Sort: gaps first, then struggling, then missing difficulty coverage.
         suggestions.sort(key=lambda s: (
             0 if "No questions" in s["reason"] else
             1 if "struggling" in s["reason"] else
             2 if "Missing" in s["reason"] else
-            3 if "GeoGebra" in s["reason"] else
             4
         ))
 

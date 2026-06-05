@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { AlertCircle, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
 import { getQuestionInsights } from '../../services/admin';
+import { getErrorMessage } from '../../lib/errors';
 import type { QuestionInsightsResponse, DomainInsight } from '../../types/admin';
 
 export function QuestionInsightsPanel() {
@@ -15,8 +16,8 @@ export function QuestionInsightsPanel() {
       const data = await getQuestionInsights();
       setInsights(data);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load insights');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load insights'));
     } finally {
       setLoading(false);
     }
@@ -113,8 +114,6 @@ function SummaryCard({ label, value, color }: { label: string; value: string | n
 }
 
 function DomainRow({ domain }: { domain: DomainInsight }) {
-  
-
   const statusConfig = {
     good: { icon: CheckCircle, color: 'text-sage-600', bg: 'bg-sage-100' },
     low: { icon: AlertCircle, color: 'text-amber-600', bg: 'bg-amber-100' },
@@ -149,8 +148,8 @@ function DomainRow({ domain }: { domain: DomainInsight }) {
           </div>
           <p className="text-xs text-text-muted mt-1">
             {domain.coverage_status === 'none'
-              ? 'No questions — generate some to fill the gap'
-              : 'Low coverage — consider generating more questions'}
+              ? 'No questions - generate some to fill the gap'
+              : 'Low coverage - consider generating more questions'}
           </p>
         </div>
       )}

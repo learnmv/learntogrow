@@ -17,11 +17,12 @@ import { fetchSubjects } from '../../services/standards';
 import { fetchGradesBySubject } from '../../services/standards';
 import { fetchDomainsBySubject } from '../../services/standards';
 import { fetchStandards } from '../../services/standards';
+import { getErrorMessage } from '../../lib/errors';
 import type { QuestionFromDB } from '../../types/questions';
 import type { Subject } from '../../types/standards';
 import type { Grade } from '../../types/standards';
 import type { Domain } from '../../types/standards';
-import type { Standard } from '../../types/standards';
+import type { HierarchyFilter, Standard } from '../../types/standards';
 
 export function QuestionsTab() {
   const [questions, setQuestions] = useState<QuestionFromDB[]>([]);
@@ -83,7 +84,7 @@ export function QuestionsTab() {
   // Load standards when grade/domain changes
   useEffect(() => {
     if (selectedGrade) {
-      const params: any = { grade_id: selectedGrade };
+      const params: HierarchyFilter = { grade_id: selectedGrade };
       if (selectedDomain) params.domain_id = selectedDomain;
       if (selectedSubject) params.subject_id = selectedSubject;
       fetchStandards(params).then(setStandards).catch(() => {});
@@ -107,12 +108,12 @@ export function QuestionsTab() {
       setSelectedIds(new Set());
       setSelectAll(false);
       setError(null);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load questions');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to load questions'));
     } finally {
       setLoading(false);
     }
-  }, [selectedSubject, selectedGrade, selectedDomain, selectedStandard, filterActive]);
+  }, [selectedGrade, selectedDomain, selectedStandard, filterActive]);
 
   useEffect(() => {
     loadQuestions();
@@ -142,8 +143,8 @@ export function QuestionsTab() {
     try {
       await toggleQuestionStatus(id);
       loadQuestions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to toggle status');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to toggle status'));
     }
   };
 
@@ -152,8 +153,8 @@ export function QuestionsTab() {
       await deleteQuestion(id);
       setShowDeleteConfirm(null);
       loadQuestions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete question');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to delete question'));
     }
   };
 
@@ -164,8 +165,8 @@ export function QuestionsTab() {
       });
       setShowBulkDeleteConfirm(false);
       loadQuestions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete questions');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to delete questions'));
     }
   };
 
@@ -180,8 +181,8 @@ export function QuestionsTab() {
       });
       setShowBulkDeleteConfirm(false);
       loadQuestions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to delete questions');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to delete questions'));
     }
   };
 
@@ -204,8 +205,8 @@ export function QuestionsTab() {
       });
       setEditingQuestion(null);
       loadQuestions();
-    } catch (err: any) {
-      setError(err.message || 'Failed to update question');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to update question'));
     }
   };
 

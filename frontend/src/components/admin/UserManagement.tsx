@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
@@ -12,6 +12,7 @@ import {
   UserCircle,
 } from 'lucide-react';
 import { getUsers, createUser, updateUserStatus, deleteUser } from '../../services/admin';
+import { getErrorMessage } from '../../lib/errors';
 import type { User } from '../../types/auth';
 import type { UserCreateRequest } from '../../types/admin';
 
@@ -22,11 +23,7 @@ export function UserManagement() {
   const [roleFilter, setRoleFilter] = useState<string>('');
   const [showCreateModal, setShowCreateModal] = useState(false);
 
-  useEffect(() => {
-    loadUsers();
-  }, [roleFilter]);
-
-  async function loadUsers() {
+  const loadUsers = useCallback(async () => {
     try {
       setLoading(true);
       const data = await getUsers(roleFilter || undefined);
@@ -36,7 +33,11 @@ export function UserManagement() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [roleFilter]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const filteredUsers = users.filter(
     (user) =>
@@ -268,8 +269,8 @@ function CreateUserModal({ onClose, onSuccess }: CreateUserModalProps) {
     try {
       await createUser(formData);
       onSuccess();
-    } catch (err: any) {
-      setError(err.message || 'Failed to create user');
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, 'Failed to create user'));
     } finally {
       setLoading(false);
     }

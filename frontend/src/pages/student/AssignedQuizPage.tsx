@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, CheckCircle, ClipboardList, RotateCcw, XCircle } from 'lucide-react'
-import { DiagramRenderer } from '../../components/DiagramRenderer'
-import { GeoGebraApplet } from '../../components/geogebra/GeoGebraApplet'
 import { QuestionStimulus } from '../../components/QuestionStimulus'
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner'
 import { cn, renderMathToHtml } from '../../lib/utils'
@@ -214,19 +212,6 @@ export function AssignedQuizPage() {
             questionClassName="mt-2 font-display text-2xl font-semibold text-text leading-relaxed"
           />
         </div>
-
-        {currentQuestion?.applet_type && currentQuestion.geogebra_commands?.length ? (
-          <div className="mb-6 flex justify-center">
-            <GeoGebraApplet
-              appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
-              commands={currentQuestion.geogebra_commands || undefined}
-              height={400}
-              width={600}
-            />
-          </div>
-        ) : currentQuestion?.diagram_spec ? (
-          <DiagramRenderer diagram={currentQuestion.diagram_spec} className="mb-6" />
-        ) : null}
 
         <div className="space-y-3">
           {(currentQuestion?.options || []).map((option, index) => {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import {
   ArrowLeft, GraduationCap, BarChart3, BookOpen, Target, Loader2,
@@ -18,13 +18,8 @@ export function ChildProgressPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (studentId) {
-      loadProgress()
-    }
-  }, [studentId])
-
-  async function loadProgress() {
+  const loadProgress = useCallback(async () => {
+    if (!studentId) return
     try {
       setLoading(true)
       setError(null)
@@ -36,7 +31,11 @@ export function ChildProgressPage() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [studentId])
+
+  useEffect(() => {
+    loadProgress()
+  }, [loadProgress])
 
   if (loading) {
     return (
@@ -87,7 +86,7 @@ export function ChildProgressPage() {
           </div>
           <div>
             <h1 className="text-2xl font-display font-semibold text-text">{data.student_name}</h1>
-            <p className="text-text-muted text-sm">@{data.student_username} · {data.email}</p>
+            <p className="text-text-muted text-sm">@{data.student_username} - {data.email}</p>
           </div>
         </div>
       </div>

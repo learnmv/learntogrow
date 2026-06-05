@@ -6,8 +6,6 @@ import { fetchQuestionsByStandard } from '../services/questions'
 import { recordAnswer } from '../services/student'
 import { useAuth } from '../contexts/AuthContext'
 import { cn, renderMathToHtml } from '../lib/utils'
-import { DiagramRenderer } from './DiagramRenderer'
-import { GeoGebraApplet } from './geogebra/GeoGebraApplet'
 import { QuestionStimulus } from './QuestionStimulus'
 import type { Standard } from '../types/standards'
 import type { QuestionFromDB } from '../types/questions'
@@ -340,9 +338,9 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
           />
         </motion.div>
 
-        {/* Question Card — STATIC shell, animated inner content */}
+        {/* Question Card - static shell, animated inner content */}
         <div className="bg-surface-elevated rounded-3xl p-8 shadow-lg shadow-sage-100/50 border border-border">
-          {/* Standard Info — static, updates without animation */}
+          {/* Standard Info - static, updates without animation */}
           {currentStandard && (
             <div className="flex items-center gap-3 mb-6">
               <span className="px-3 py-1 bg-sage-100 text-sage-700 font-display font-medium text-sm rounded-full">
@@ -354,35 +352,7 @@ export function Quiz({ subjectId, gradeId, onExit, standards: standardsProp }: Q
             </div>
           )}
 
-          {/* Diagram — PERSISTENT, inside the static card shell.
-              Never unmounts; only receives new commands when question changes.
-              Fades out during loading so the old diagram doesn't linger
-              while the next question is being fetched. */}
-          {currentQuestion?.applet_type && currentQuestion.geogebra_commands?.length ? (
-            <div
-              className={cn(
-                'mb-6 flex justify-center transition-opacity duration-300',
-                generatingQuestion && 'opacity-0 pointer-events-none'
-              )}
-            >
-              <GeoGebraApplet
-                appletType={currentQuestion.applet_type as 'graphing' | 'geometry' | '3d' | 'classic'}
-                commands={currentQuestion.geogebra_commands || undefined}
-                height={400}
-                width={600}
-              />
-            </div>
-          ) : currentQuestion?.diagram_spec ? (
-            <DiagramRenderer
-              diagram={currentQuestion.diagram_spec}
-              className={cn(
-                'mb-6 transition-opacity duration-300',
-                generatingQuestion && 'opacity-0 pointer-events-none'
-              )}
-            />
-          ) : null}
-
-          {/* Inner content — ANIMATED via AnimatePresence */}
+          {/* Inner content - animated via AnimatePresence */}
           <AnimatePresence mode="wait">
             {generatingQuestion ? (
               <motion.div

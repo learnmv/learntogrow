@@ -7,7 +7,7 @@ from app.database import Base
 
 
 class Question(Base):
-    """Generated questions with metadata and optional GeoGebra diagrams."""
+    """Generated text questions with metadata."""
     __tablename__ = "questions"
 
     id = Column(Integer, primary_key=True)
@@ -20,15 +20,9 @@ class Question(Base):
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text)
     stimulus = Column(JSON)
-    math_world = Column(JSON)
-    diagram_spec = Column(JSON)
 
     # Metadata
     difficulty = Column(Numeric(3, 2))
-    requires_diagram = Column(Boolean, default=False)
-    applet_type = Column(String(20))
-    geogebra_commands = Column(JSON)
-    applet_config = Column(JSON)
     generation_signature = Column(JSON)
     math_spec = Column(JSON)
     semantic_hash = Column(String(128))

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play, Loader2, CheckCircle, AlertCircle, Zap, RefreshCw,
-  ChevronDown, ChevronUp, Clock, Box, List, ShieldCheck, Layers, Gauge,
+  ChevronDown, ChevronUp, Clock, Box, List, ShieldCheck, Gauge,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -32,7 +32,6 @@ type GenMode =
   | 'smart-struggling'
   | 'smart-balanced'
   | 'smart-difficulty'
-  | 'smart-diagrams'
   | 'coverage';
 type QualityMode = 'reviewed' | 'quality';
 type DisplayStandard = Pick<Standard, 'id' | 'code' | 'description'>;
@@ -383,7 +382,6 @@ export function QuestionGenerationPanel() {
               { key: 'smart-struggling' as GenMode, label: 'Struggling', icon: AlertCircle },
               { key: 'smart-balanced' as GenMode, label: 'Balanced', icon: List },
               { key: 'smart-difficulty' as GenMode, label: 'Difficulty', icon: Gauge },
-              { key: 'smart-diagrams' as GenMode, label: 'Diagrams', icon: Layers },
             ].map((m) => (
               <button
                 key={m.key}
@@ -913,10 +911,10 @@ export function QuestionGenerationPanel() {
                         <StatusBadge status={job.status} size="sm" />
                       </div>
                       <div className="text-text-muted">
-                        {job.completed_standards}/{job.total_standards} standards · {job.questions_created} questions
+                        {job.completed_standards}/{job.total_standards} standards - {job.questions_created} questions
                       </div>
                       <div className="text-text-subtle mt-1 capitalize">
-                        {job.quality_mode} mode · {job.candidate_count} candidate{job.candidate_count === 1 ? '' : 's'}
+                        {job.quality_mode} mode - {job.candidate_count} candidate{job.candidate_count === 1 ? '' : 's'}
                       </div>
                       {job.errors && job.errors.length > 0 && (
                         <div className="text-coral-500 mt-1">{job.errors.length} errors</div>

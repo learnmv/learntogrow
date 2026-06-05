@@ -22,7 +22,7 @@ export function SubjectSelector({ onGradeSelect }: SubjectSelectorProps) {
         const data = await fetchSubjects()
         setSubjects(data)
         setError(null)
-      } catch (err) {
+      } catch {
         setError('Failed to load subjects')
       } finally {
         setLoadingSubjects(false)
@@ -46,7 +46,7 @@ export function SubjectSelector({ onGradeSelect }: SubjectSelectorProps) {
         const data = await fetchGrades(parseInt(selectedSubject))
         setGrades(data)
         setError(null)
-      } catch (err) {
+      } catch {
         setError('Failed to load grades')
       } finally {
         setLoadingGrades(false)
