@@ -3,5 +3,5 @@ kind: ConfigMap
 metadata:
   name: db-config
 data:
-  host: "10.0.0.134"
+  host: "10.0.0.131"
   port: "30432"
