@@ -70,7 +70,7 @@ export function renderMathToHtml(text: string): string {
 
     const j = text.indexOf('$', i + 1)
     if (j === -1) {
-      // No closing delimiter — treat as literal
+      // No closing delimiter - treat as literal
       result += '$'
       i++
       continue
@@ -86,7 +86,7 @@ export function renderMathToHtml(text: string): string {
       }
       i = j + 1
     } else {
-      // Not math — emit the opening $ literally and move forward
+      // Not math - emit the opening $ literally and move forward
       // so the closing $ can still start a real math block later
       result += '$'
       i++

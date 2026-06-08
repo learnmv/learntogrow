@@ -350,7 +350,6 @@ def generate_questions_admin(
         domain_ids=request.domain_ids,
         difficulty_min=request.difficulty_min,
         difficulty_max=request.difficulty_max,
-        only_diagram_questions=False,
     )
 
     if request.standard_ids:
@@ -825,16 +824,6 @@ def get_prompt_placeholders(
             placeholder="{keywords}",
             description="Comma-separated key concepts",
             example="expressions, exponents, evaluation"
-        ),
-        PromptPlaceholder(
-            placeholder="{applet_type}",
-            description="GeoGebra applet type (only for diagram questions)",
-            example="graphing"
-        ),
-        PromptPlaceholder(
-            placeholder="{applet_commands}",
-            description="Available GeoGebra commands (only for diagram questions)",
-            example="- Points: A = (1, 2)\\n- Lines: Line(A, B)"
         ),
         PromptPlaceholder(
             placeholder="{question_specific_requirements}",

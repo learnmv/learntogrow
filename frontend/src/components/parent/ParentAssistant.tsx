@@ -352,7 +352,7 @@ function TopicCard({ topics, focus, onAction, sending }: TopicCardProps) {
                     {getString(item.domain_name) || 'Topic'}
                   </p>
                   <p className="text-xs text-text-muted">
-                    {getString(item.domain_code)} · {getString(item.level) || 'Skill level pending'}
+                    {getString(item.domain_code)} - {getString(item.level) || 'Skill level pending'}
                   </p>
                 </div>
                 {pct !== null && (
@@ -400,7 +400,7 @@ function SyllabusCard({ domains }: { domains: unknown[] }) {
                 {getString(item.domain_name) || 'Domain'}
               </p>
               <p className="text-xs text-text-muted">
-                {getString(item.domain_code)} · {getNumber(item.standards_count) ?? 0} standards
+                {getString(item.domain_code)} - {getNumber(item.standards_count) ?? 0} standards
               </p>
             </div>
           )
@@ -495,7 +495,7 @@ function AssignmentCard({ assignment, generatedQuestions }: { assignment: Record
       </div>
       <p className="font-display font-semibold text-text">{getString(assignment.title) || 'Practice Quiz'}</p>
       <p className="text-xs text-text-muted mt-1">
-        {getString(assignment.student_name) || 'Student'} · {getNumber(assignment.question_count) ?? 0} questions · {getString(assignment.difficulty) || 'mixed'}
+        {getString(assignment.student_name) || 'Student'} - {getNumber(assignment.question_count) ?? 0} questions - {getString(assignment.difficulty) || 'mixed'}
       </p>
       <p className="text-xs text-text-muted mt-1">
         {generatedQuestions && generatedQuestions > 0

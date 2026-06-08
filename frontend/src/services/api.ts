@@ -26,7 +26,15 @@ export async function fetchApi<T>(
     // FastAPI validation errors return detail as array of objects
     let detail: string
     if (Array.isArray(error.detail)) {
-      detail = error.detail.map((e: any) => e.msg || String(e)).join('; ')
+      detail = error.detail
+        .map((item: unknown) => {
+          if (typeof item === 'object' && item !== null && 'msg' in item) {
+            const message = (item as { msg?: unknown }).msg
+            return typeof message === 'string' ? message : String(message)
+          }
+          return String(item)
+        })
+        .join('; ')
     } else if (typeof error.detail === 'string') {
       detail = error.detail
     } else {

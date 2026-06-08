@@ -41,8 +41,6 @@ class QuestionEditRequest(BaseModel):
     correct_answer: Optional[str] = None
     explanation: Optional[str] = None
     stimulus: Optional[dict] = None
-    math_world: Optional[dict] = None
-    diagram_spec: Optional[dict] = None
     difficulty: Optional[float] = Field(None, ge=0, le=1)
     is_active: Optional[bool] = None
 
@@ -88,7 +86,7 @@ class SmartFillRequest(BaseModel):
     """Smart fill question generation request."""
     subject_id: int
     grade_id: Optional[int] = None
-    fill_mode: str = Field("gaps", pattern="^(gaps|struggling|balanced|difficulty|diagrams)$")
+    fill_mode: str = Field("gaps", pattern="^(gaps|struggling|balanced|difficulty)$")
     max_standards: int = Field(10, ge=1, le=50)
 
 

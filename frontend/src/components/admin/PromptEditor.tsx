@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { FileText, Edit3, Save, X, HelpCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { getPrompts, updatePrompt, getPromptPlaceholders } from '../../services/prompts';
+import { getErrorMessage } from '../../lib/errors';
 import type { PromptResponse, PromptPlaceholder } from '../../types/prompt';
 
 export function PromptEditor() {
@@ -28,8 +29,8 @@ export function PromptEditor() {
       ]);
       setPrompts(promptsData);
       setPlaceholders(placeholdersData.placeholders);
-    } catch (err: any) {
-      toast.error('Failed to load prompts', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Failed to load prompts', { description: getErrorMessage(err) });
     } finally {
       setLoading(false);
     }
@@ -70,8 +71,8 @@ export function PromptEditor() {
       );
       toast.success('Prompt saved successfully');
       cancelEdit();
-    } catch (err: any) {
-      toast.error('Failed to save prompt', { description: err.message });
+    } catch (err: unknown) {
+      toast.error('Failed to save prompt', { description: getErrorMessage(err) });
     } finally {
       setSaving(false);
     }

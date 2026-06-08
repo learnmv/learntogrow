@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY, Numeric, TIMESTAMP, Boolean
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, ARRAY, Numeric, TIMESTAMP
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -13,8 +13,6 @@ class Standard(Base):
     keywords = Column(ARRAY(String))
     difficulty_base = Column(Numeric(3, 2))
     conceptual_category = Column(String(50))
-    requires_diagram = Column(Boolean, default=False)
-    applet_type = Column(String(20), nullable=True)
     created_at = Column(TIMESTAMP)
     cluster = relationship("Cluster", backref="standards")
     grade = relationship("Grade", backref="standards")

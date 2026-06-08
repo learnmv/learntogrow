@@ -159,7 +159,7 @@ export interface SmartFillSuggestion {
 export interface SmartFillRequest {
   subject_id: number;
   grade_id?: number;
-  fill_mode: 'gaps' | 'struggling' | 'balanced' | 'difficulty' | 'diagrams';
+  fill_mode: 'gaps' | 'struggling' | 'balanced' | 'difficulty';
   max_standards: number;
 }
 

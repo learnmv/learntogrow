@@ -135,7 +135,7 @@ export async function toggleQuestionStatus(questionId: number): Promise<Question
 }
 
 /**
- * Generate questions (legacy endpoint — now returns a GenerationJob)
+ * Generate questions (legacy endpoint - now returns a GenerationJob)
  */
 export async function generateQuestions(data: QuestionGenerateRequest): Promise<QuestionGenerateResponse> {
   return post<QuestionGenerateResponse>('/admin/generate-questions', data, { headers: getAuthHeaders() });
