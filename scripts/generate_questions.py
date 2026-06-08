@@ -76,10 +76,6 @@ class Question(Base):
     correct_answer = Column(Text, nullable=False)
     explanation = Column(Text)
     difficulty = Column(Numeric(3, 2))
-    requires_diagram = Column(Boolean, default=False)
-    applet_type = Column(String(20))
-    geogebra_commands = Column(JSON)
-    applet_config = Column(JSON)
     created_at = Column(TIMESTAMP)
     updated_at = Column(TIMESTAMP)
     generated_by = Column(String(100))
@@ -117,10 +113,6 @@ def store_question(db: Session, task: GenerationTask, question_data: dict) -> Op
         correct_answer=question_data.get("answer", ""),
         explanation=question_data.get("explanation"),
         difficulty=question_data.get("difficulty", task.difficulty),
-        requires_diagram=question_data.get("requires_diagram", False),
-        applet_type=question_data.get("applet_type"),
-        geogebra_commands=question_data.get("geogebra_commands"),
-        applet_config=question_data.get("applet_config"),
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
         generated_by=question_data.get("model", "ollama"),
